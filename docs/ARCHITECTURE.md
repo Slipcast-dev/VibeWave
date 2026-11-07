@@ -12,7 +12,7 @@
 
 ### VibeWaveCore
 
-`Library.swift` содержит `Track`, `Playlist`, `TrackDragPayload`, `LibraryStore` и форматирование времени. Ядро не зависит от SwiftUI и аудиодекодера.
+`Library.swift` содержит `Track`, `Playlist`, `TrackDragPayload`, `LibraryStore`, `PlaybackOrder`, `PlaybackQueue` и форматирование времени. Ядро не зависит от SwiftUI и аудиодекодера.
 
 `Track` ссылается на исходный файл, хранит длительность, имя и необязательную закладку. `Playlist` сохраняет идентификатор, имя и порядок треков. `LibraryStore` записывает только ручные плейлисты.
 
@@ -57,3 +57,10 @@
 - [Сохранение положения окна](https://developer.apple.com/documentation/appkit/nswindow/setframeautosavename(_:))
 - [AVAudioPlayer](https://developer.apple.com/documentation/avfaudio/avaudioplayer)
 - [SwiftUI drag and drop](https://developer.apple.com/documentation/swiftui/drag-and-drop)
+
+
+## Столбцы, постоянная очередь и порядок
+
+`TrackTable` хранит ширины столбцов через AppStorage и передаёт единую структуру размеров строкам. Отдельные разделители обрабатывают изменение ширины, не перехватывая перенос треков. `OpenQueueRow` показывает очередь в боковой панели при любом выбранном плейлисте и передаёт источник nil явно.
+
+`PlaybackQueue` — чистая логика формирования и согласования последовательности. `startTrack` переключает декодер без пересоздания этой последовательности. Ручной перенос включает `inOrder`; переключение `shuffled` не меняет записанный порядок библиотеки. Контекстные действия и drag-and-drop проходят через общие методы модели.

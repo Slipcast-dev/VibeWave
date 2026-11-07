@@ -118,6 +118,49 @@ struct RegressionChecks {
         precondition(dropModel.playlists.isEmpty, "Удалённые плейлисты не воссоздаются при импорте")
         print("PASS: no automatic playlists, independent open queue, manual playlist import, Finder open routing")
         print("PASS: external providers, internal queue reordering, queue-to-playlist copy, playlist moves, persistence")
+        // Постоянный список вне плейлистов действует на свой источник, а не на выбранный плейлист.
+        dropModel.createPlaylist("Не трогать")
+        let selectedID = dropModel.selectedID!
+        let firstOutside = dropModel.openTracks[0]
+        dropModel.moveTrackBy(firstOutside.id, in: nil, offset: 1)
+        precondition(dropModel.openTracks.last?.id == firstOutside.id)
+        precondition(dropModel.selectedID == selectedID && dropModel.selected?.tracks.isEmpty == true)
+        dropModel.moveTrackBy(firstOutside.id, in: nil, offset: -1)
+        precondition(dropModel.openTracks.first?.id == firstOutside.id)
+
+        // Случайный режим не повторяет элементы и не меняет сохранённый порядок библиотеки.
+        let ordered = [a, b, c]
+        let mixed = PlaybackQueue.make(tracks: ordered, startingAt: b.id, order: .shuffled)
+        precondition(mixed.first?.id == b.id && Set(mixed.map(\.id)) == Set(ordered.map(\.id)))
+        precondition(PlaybackQueue.make(tracks: ordered, startingAt: b.id, order: .inOrder) == ordered)
+        let reconciled = PlaybackQueue.reconcile(mixed, with: [a, b], order: .shuffled)
+        precondition(reconciled == mixed.filter { $0.id != c.id })
+
+        // Следующий/предыдущий идут по одному плану, а не создают новый shuffle на каждом шаге.
+        let orderModel = PlayerModel(supportDirectory: support.appendingPathComponent("OrderCheck"))
+        orderModel.openTracks = dropModel.openTracks
+        let starting = orderModel.openTracks[0]
+        orderModel.play(starting, in: orderModel.openTracks)
+        if orderModel.playing { orderModel.toggle() }
+        orderModel.setPlaybackOrder(.shuffled)
+        let expectedNext = orderModel.nextTrack!
+        orderModel.next()
+        if orderModel.playing { orderModel.toggle() }
+        precondition(orderModel.current?.id == expectedNext.id)
+        orderModel.previous()
+        if orderModel.playing { orderModel.toggle() }
+        precondition(orderModel.current?.id == starting.id && orderModel.nextTrack?.id == expectedNext.id)
+        orderModel.moveTrackBy(starting.id, in: nil, offset: 1)
+        precondition(orderModel.playbackOrder == .inOrder, "Перетаскивание/ручной перенос отменяют shuffle")
+        precondition(orderModel.openTracks.last?.id == starting.id && orderModel.nextTrack == nil)
+        orderModel.moveTrackBy(starting.id, in: nil, offset: -1)
+        precondition(orderModel.nextTrack?.id == expectedNext.id, "Следующий трек соответствует ручному порядку")
+        orderModel.stop()
+        let originalPlaylist = dropModel.playlists
+        dropModel.removeTrack(firstOutside.id, from: nil)
+        precondition(!dropModel.openTracks.contains(where: { $0.id == firstOutside.id }))
+        precondition(dropModel.playlists == originalPlaylist && dropModel.selectedID == selectedID)
+        print("PASS: explicit outside-queue actions, manual order, shuffle uniqueness and navigation history")
         if CommandLine.arguments.count > 2 {
             let bundle = Bundle(path: CommandLine.arguments[2])!
             let iconURL = bundle.url(forResource: "VibeWaveIcon", withExtension: "icns")!

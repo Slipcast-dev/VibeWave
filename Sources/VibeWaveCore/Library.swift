@@ -85,3 +85,26 @@ public struct TrackDragPayload: Codable, Equatable {
         self.trackID = trackID
     }
 }
+
+/// Режим меняет только очередь проигрывания, не переставляя записи в библиотеке.
+public enum PlaybackOrder: String, CaseIterable {
+    case inOrder, shuffled
+    public var title: String { self == .inOrder ? "По списку" : "Случайный" }
+}
+
+/// Чистые операции над очередью: случайный режим не повторяет треки в одном проходе.
+public enum PlaybackQueue {
+    public static func make(tracks: [Track], startingAt id: UUID, order: PlaybackOrder) -> [Track] {
+        guard order == .shuffled, let current = tracks.first(where: { $0.id == id }) else { return tracks }
+        return [current] + tracks.filter { $0.id != id }.shuffled()
+    }
+
+    /// Добавление и удаление файлов сохраняют уже выбранную случайную последовательность.
+    public static func reconcile(_ queue: [Track], with tracks: [Track], order: PlaybackOrder) -> [Track] {
+        guard order == .shuffled else { return tracks }
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let existing = queue.compactMap { byID[$0.id] }
+        let included = Set(existing.map(\.id))
+        return existing + tracks.filter { !included.contains($0.id) }.shuffled()
+    }
+}

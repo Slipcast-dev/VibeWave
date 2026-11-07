@@ -19,6 +19,7 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
     @Published var error: String?
     @Published var importing = false
+    @Published private(set) var playbackOrder: PlaybackOrder = .inOrder
 
     private var player: AVAudioPlayer?
     private var timer: AnyCancellable?
@@ -31,6 +32,10 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     var selected: Playlist? { playlists.first { $0.id == selectedID } }
     var visibleTracks: [Track] { selected?.tracks ?? openTracks }
+    var nextTrack: Track? {
+        guard let id = current?.id, let index = queue.firstIndex(where: { $0.id == id }), index + 1 < queue.count else { return nil }
+        return queue[index + 1]
+    }
 
     private func tracks(in playlistID: UUID?) -> [Track]? {
         guard let id = playlistID else { return openTracks }
@@ -47,7 +52,7 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func refreshPlaybackQueue() {
         guard current != nil, let tracks = tracks(in: playbackPlaylistID) else { return }
-        queue = tracks
+        queue = PlaybackQueue.reconcile(queue, with: tracks, order: playbackOrder)
     }
 
     override convenience init() {
@@ -102,15 +107,34 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
         save()
     }
 
-    func removeTrack(_ id: UUID) {
-        guard var tracks = tracks(in: selectedID) else { return }
+    func removeTrack(_ id: UUID) { removeTrack(id, from: selectedID) }
+
+    /// Явный источник нужен для постоянного списка очереди при просмотре плейлиста.
+    func removeTrack(_ id: UUID, from sourceID: UUID?) {
+        guard var tracks = tracks(in: sourceID) else { return }
         tracks.removeAll { $0.id == id }
-        replaceTracks(tracks, in: selectedID)
-        if playbackPlaylistID == selectedID {
-            queue = tracks
+        replaceTracks(tracks, in: sourceID)
+        if playbackPlaylistID == sourceID {
             if current?.id == id { stop() }
+            else { refreshPlaybackQueue() }
         }
-        if selectedID != nil { save() }
+        if sourceID != nil { save() }
+    }
+
+    func moveTrackBy(_ id: UUID, in sourceID: UUID?, offset: Int) {
+        guard let tracks = tracks(in: sourceID), let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard tracks.indices.contains(target), target != index else { return }
+        let destination = offset < 0 ? tracks[target].id : (target + 1 < tracks.count ? tracks[target + 1].id : nil)
+        moveTrack(TrackDragPayload(playlistID: sourceID, trackID: id), to: sourceID, before: destination)
+    }
+
+    func setPlaybackOrder(_ order: PlaybackOrder) {
+        guard playbackOrder != order else { return }
+        playbackOrder = order
+        guard let current = current else { return }
+        let source = tracks(in: playbackPlaylistID) ?? queue
+        queue = PlaybackQueue.make(tracks: source, startingAt: current.id, order: order)
     }
 
     /// Кнопка добавляет в выбранный пользователем раздел: очередь или плейлист.
@@ -199,6 +223,8 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
             let index = destination.flatMap { id in source.firstIndex { $0.id == id } } ?? source.endIndex
             source.insert(track, at: index)
             replaceTracks(source, in: targetID)
+            // Ручная перестановка — явный выбор собственного порядка вместо shuffle.
+            playbackOrder = .inOrder
         } else {
             guard !target.contains(where: { $0.url.standardizedFileURL == track.url.standardizedFileURL }) else { return }
             // Сохранённые плейлисты не теряют записи при копировании в очередь.
@@ -219,9 +245,14 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func play(_ track: Track, in tracks: [Track], playlistID: UUID? = nil) {
-        stop()
-        queue = tracks
+        queue = PlaybackQueue.make(tracks: tracks, startingAt: track.id, order: playbackOrder)
         playbackPlaylistID = playlistID
+        startTrack(track)
+    }
+
+    /// Переход вперёд/назад сохраняет выбранный план, не перемешивая его заново.
+    private func startTrack(_ track: Track) {
+        stop()
         do {
             var resolved = track.url
             if let data = track.bookmark {
@@ -263,7 +294,8 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func toggle() {
         guard let player = player else {
-            if let first = visibleTracks.first { play(first, in: visibleTracks, playlistID: selectedID) }
+            let first = playbackOrder == .shuffled ? visibleTracks.randomElement() : visibleTracks.first
+            if let first = first { play(first, in: visibleTracks, playlistID: selectedID) }
             return
         }
         if playing {
@@ -291,14 +323,14 @@ final class PlayerModel: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 
     func next() {
-        guard let id = current?.id, let index = queue.firstIndex(where: { $0.id == id }), index + 1 < queue.count else { stop(); return }
-        play(queue[index + 1], in: queue, playlistID: playbackPlaylistID)
+        guard let next = nextTrack else { stop(); return }
+        startTrack(next)
     }
 
     func previous() {
         if position > 3 { seek(0); return }
         guard let id = current?.id, let index = queue.firstIndex(where: { $0.id == id }) else { return }
-        play(queue[max(0, index - 1)], in: queue, playlistID: playbackPlaylistID)
+        startTrack(queue[max(0, index - 1)])
     }
 
     func stop() {

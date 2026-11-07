@@ -66,12 +66,6 @@ struct ContentView: View {
             HStack(spacing: 6) {
                 Text("Плейлисты").fontWeight(.bold)
                 Spacer()
-                Button { model.selectedID = nil } label: {
-                    Image(systemName: "music.note").font(.system(size: 10, weight: .bold))
-                }
-                .help("Музыка вне плейлистов")
-                .accessibilityLabel("Показать музыку вне плейлистов")
-                .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: nil, targeted: $openQueueTargeted))
                 Button { renameID = nil; name = ""; naming = true } label: {
                     Image(systemName: "plus").font(.system(size: 10, weight: .bold))
                 }.help("Создать плейлист")
@@ -90,6 +84,26 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.background).retroBevel(theme, sunken: true)
+            HStack(spacing: 5) {
+                Text("Вне плейлистов").fontWeight(.bold)
+                Text("(\(model.openTracks.count))").foregroundColor(theme.secondary)
+                Spacer(minLength: 0)
+                Button { model.selectedID = nil } label: {
+                    Image(systemName: "list.bullet").font(.system(size: 10, weight: .bold))
+                }.help("Показать очередь в основной таблице")
+                    .accessibilityLabel("Показать музыку вне плейлистов")
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    if model.openTracks.isEmpty {
+                        Text("Нет открытой музыки").foregroundColor(theme.secondary).padding(7)
+                    }
+                    ForEach(model.openTracks) { track in OpenQueueRow(model: model, track: track, theme: theme) }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(3)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.background).retroBevel(theme, sunken: true)
+            .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: nil, targeted: $openQueueTargeted))
             VStack(spacing: 6) {
                 Button { model.importFiles() } label: {
                     Label(model.importing ? "Добавление…" : "Добавить файлы…", systemImage: "folder")
@@ -134,40 +148,7 @@ struct ContentView: View {
                 Spacer()
                 Text("Треков: \(model.visibleTracks.count)").foregroundColor(theme.secondary)
             }.padding(.horizontal, 3).padding(.vertical, 3)
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Text("№").frame(width: 34, alignment: .leading)
-                    Text("Название").frame(maxWidth: .infinity, alignment: .leading)
-                    Text("Формат").frame(width: 48)
-                    Text("Время").frame(width: 38, alignment: .trailing)
-                }
-                .font(.custom("Arial", size: 11))
-                .padding(.horizontal, 9).padding(.vertical, 6)
-                .background(theme.panel).retroBevel(theme)
-                if model.visibleTracks.isEmpty {
-                    VStack(spacing: 10) {
-                        Spacer()
-                        Image(systemName: "music.note").font(.system(size: 24)).foregroundColor(theme.secondary)
-                        Text(model.selectedID == nil ? "Откройте музыку" : "Добавьте музыку в плейлист").fontWeight(.bold)
-                        Text(model.selectedID == nil ? "MP3 и FLAC · вне плейлистов" : "Перетащите сюда файлы MP3 и FLAC")
-                            .foregroundColor(theme.secondary)
-                        Spacer()
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(model.visibleTracks.enumerated()), id: \.element.id) { index, track in
-                                TrackRow(model: model, track: track, tracks: model.visibleTracks, playlistID: model.selectedID, index: index, theme: theme)
-                            }
-                            Text("Перетащите сюда, чтобы добавить в конец")
-                                .font(.custom("Arial", size: 10)).foregroundColor(theme.secondary)
-                                .frame(maxWidth: .infinity, minHeight: 32).contentShape(Rectangle())
-                        }.padding(3)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.background).retroBevel(theme, sunken: true)
+            TrackTable(model: model, theme: theme)
         }
         .padding(8).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.panel).retroBevel(theme)
@@ -195,13 +176,29 @@ struct ContentView: View {
                         .help(model.playing ? "Пауза" : "Воспроизвести")
                     Button { model.next() } label: {
                         Image(systemName: "forward.end.fill").frame(width: 16, height: 18)
-                    }.disabled(model.current == nil).help("Следующий трек")
+                    }.disabled(model.current == nil).help(model.nextTrack.map { "Следующий: \($0.title)" } ?? "Конец очереди")
                 }
                 HStack(spacing: 6) {
                     Image(systemName: "speaker.wave.1").foregroundColor(theme.foreground)
                     RetroSlider(value: $model.volume, theme: theme).frame(width: 85)
                         .accessibilityLabel("Громкость")
                 }
+            }
+            HStack {
+                Menu {
+                    ForEach(PlaybackOrder.allCases, id: \.rawValue) { order in
+                        Button { model.setPlaybackOrder(order) } label: {
+                            if model.playbackOrder == order { Label(order.title, systemImage: "checkmark") }
+                            else { Text(order.title) }
+                        }
+                    }
+                } label: {
+                    Text("Порядок: \(model.playbackOrder.title)").font(.custom("Arial", size: 12))
+                }
+                .menuStyle(.borderlessButton).frame(width: 185)
+                .padding(.horizontal, 5).padding(.vertical, 4).background(theme.panel).retroBevel(theme)
+                .help("По списку учитывает перестановку треков; случайный режим не повторяет треки в одном проходе")
+                Spacer()
             }
             HStack(spacing: 8) {
                 Text(timeLabel(model.position)).frame(width: 38).monospacedDigit()

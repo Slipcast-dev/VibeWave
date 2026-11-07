@@ -14,6 +14,6 @@ swiftc -parse-as-library -c -module-name VibeWaveCore \
 swiftc -parse-as-library -I "$build_dir" -module-cache-path "$module_cache" \
     -target "$(uname -m)-apple-macosx13.0" Sources/VibeWave/PlayerModel.swift Sources/VibeWave/TrackDropDelegate.swift \
     Sources/VibeWave/Theme.swift Sources/VibeWave/RetroControls.swift Sources/VibeWave/TrackRow.swift \
-    Sources/VibeWave/ContentView.swift Sources/VibeWave/RetroWindow.swift \
+    Sources/VibeWave/ContentView.swift Sources/VibeWave/RetroWindow.swift Sources/VibeWave/TrackTable.swift \
     Checks/RegressionChecks.swift "$build_dir/VibeWaveCore.o" -o "$build_dir/checks"
 "$build_dir/checks" "$PWD/Checks/Fixtures" "$PWD/dist/VibeWave.app"

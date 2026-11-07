@@ -48,6 +48,17 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(try store.load(), [playlist])
     }
 
+    func testPlaybackOrderAndReconciliation() {
+        let tracks = (0..<5).map { Track(url: URL(fileURLWithPath: "/tmp/\($0).mp3"), duration: 10) }
+        XCTAssertEqual(PlaybackQueue.make(tracks: tracks, startingAt: tracks[2].id, order: .inOrder), tracks)
+        let shuffled = PlaybackQueue.make(tracks: tracks, startingAt: tracks[2].id, order: .shuffled)
+        XCTAssertEqual(shuffled.first?.id, tracks[2].id)
+        XCTAssertEqual(Set(shuffled.map(\.id)), Set(tracks.map(\.id)))
+        XCTAssertEqual(shuffled.count, tracks.count)
+        let remaining = Array(tracks.prefix(3))
+        XCTAssertEqual(PlaybackQueue.reconcile(shuffled, with: remaining, order: .shuffled), shuffled.filter { remaining.contains($0) })
+    }
+
     func testTimeLabels() {
         XCTAssertEqual(timeLabel(84), "1:24")
         XCTAssertEqual(timeLabel(-10), "0:00")
