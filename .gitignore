@@ -1,0 +1,12 @@
+# Сборки, временные файлы и локальное окружение
+.build/
+.swiftpm/
+dist/
+.DS_Store
+Icon?
+*.log
+*.xcuserstate
+xcuserdata/
+.env
+.env.*
+!.env.example
