@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="230" viewBox="0 0 1280 230" role="img" aria-labelledby="title desc">
+  <title id="title">Три главные возможности VibeWave</title>
+  <desc id="desc">Музыка вне плейлистов, ручные плейлисты, три темы: Windows 95, светлая и тёмная.</desc>
+  <rect width="1280" height="230" fill="#c0c0c0"/>
+  <path d="M1 229V1H1279" fill="none" stroke="#fff" stroke-width="2"/>
+  <path d="M1279 1V229H1" fill="none" stroke="#404040" stroke-width="2"/>
+  <g font-family="Arial, sans-serif">
+    <g fill="#fff" stroke="#808080"><rect x="18" y="18" width="400" height="192"/><rect x="440" y="18" width="400" height="192"/><rect x="862" y="18" width="400" height="192"/></g>
+    <g fill="#000080"><rect x="21" y="21" width="394" height="34"/><rect x="443" y="21" width="394" height="34"/><rect x="865" y="21" width="394" height="34"/></g>
+    <g fill="#fff" font-size="17" font-weight="700"><text x="34" y="44">01 / ОЧЕРЕДЬ</text><text x="456" y="44">02 / ПЛЕЙЛИСТЫ</text><text x="878" y="44">03 / ТЕМЫ</text></g>
+    <g fill="#111" font-size="25" font-weight="700"><text x="34" y="102">Просто откройте музыку</text><text x="456" y="102">Создаются вручную</text><text x="878" y="102">Windows 95 + ещё две</text></g>
+    <g fill="#404040" font-size="19"><text x="34" y="142">Без автоматических плейлистов.</text><text x="34" y="174">Файлы остаются на месте.</text><text x="456" y="142">Порядок сохраняется.</text><text x="456" y="174">Переносите треки мышью.</text><text x="878" y="142">Светлая чёрно-белая.</text><text x="878" y="174">Тёмная с фиолетовым.</text></g>
+  </g>
+</svg>

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Документация VibeWave
+    url: https://github.com/Slipcast-dev/VibeWave/blob/main/DOCUMENTATION.md
+    about: Управление, сборка, хранение данных и устранение неполадок

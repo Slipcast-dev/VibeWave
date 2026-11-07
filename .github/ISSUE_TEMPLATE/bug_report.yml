@@ -1,0 +1,45 @@
+name: Ошибка
+description: Сообщить об ошибке с шагами воспроизведения
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Не прикладывайте пароли, токены, личную library.json и музыку без разрешения.
+  - type: input
+    id: version
+    attributes:
+      label: Версия VibeWave
+      placeholder: Например, 0.5.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: macOS и архитектура
+      placeholder: Версия macOS; Intel или Apple Silicon; источник сборки
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      description: Укажите действия, формат файла и выбранный раздел, не раскрывая личные пути.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Дополнительные сведения
+      description: Текст ошибки, обезличенный снимок экрана или небольшой фрагмент журнала.

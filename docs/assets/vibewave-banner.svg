@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="title desc">
+  <title id="title">VibeWave — локальная музыка, ретро-интерфейс</title>
+  <desc id="desc">Приватный проект. MP3 и FLAC, macOS 13+, SwiftUI и AppKit, работа без сети.</desc>
+  <rect width="1280" height="460" fill="#008080"/>
+  <rect x="22" y="22" width="1238" height="420" fill="#202020"/>
+  <rect x="16" y="16" width="1238" height="420" fill="#c0c0c0"/>
+  <path d="M16 436V16H1254" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M1254 16V436H16" fill="none" stroke="#404040" stroke-width="4"/>
+  <rect x="28" y="28" width="1214" height="42" fill="#000080"/>
+  <g fill="#fff" font-family="Arial, sans-serif" font-size="21" font-weight="700">
+    <text x="44" y="56">♪  VibeWave</text><text x="1218" y="56" text-anchor="end" font-size="17">PRIVATE REPOSITORY</text>
+  </g>
+  <rect x="54" y="110" width="166" height="166" rx="22" fill="#121019" stroke="#808080" stroke-width="2"/>
+  <path d="M77 163 C92 125 109 235 128 199 C144 163 149 136 164 171 C178 205 181 226 198 163" fill="none" stroke="#b078f3" stroke-width="19" stroke-linecap="round"/>
+  <g fill="#111" font-family="Arial, sans-serif">
+    <text x="254" y="171" font-size="78" font-weight="700">VibeWave</text>
+    <text x="259" y="220" font-size="29">Локальная музыка. Ретро-интерфейс.</text>
+    <text x="259" y="257" font-size="22" fill="#404040">Очередь вне плейлистов · Ручные плейлисты · Drag &amp; drop</text>
+  </g>
+  <g fill="#c0c0c0" stroke="#fff" stroke-width="2">
+    <rect x="54" y="316" width="271" height="66"/><rect x="341" y="316" width="271" height="66"/>
+    <rect x="628" y="316" width="271" height="66"/><rect x="915" y="316" width="271" height="66"/>
+  </g>
+  <g fill="none" stroke="#404040" stroke-width="2">
+    <path d="M325 316V382H54"/><path d="M612 316V382H341"/><path d="M899 316V382H628"/><path d="M1186 316V382H915"/>
+  </g>
+  <g fill="#111" font-family="Arial, sans-serif" font-size="24" font-weight="700" text-anchor="middle">
+    <text x="189" y="357">MP3 + FLAC</text><text x="476" y="357">macOS 13+</text><text x="763" y="357">SwiftUI + AppKit</text><text x="1050" y="357">Без сети</text>
+  </g>
+  <text x="54" y="414" fill="#404040" font-family="Arial, sans-serif" font-size="16">Минималистичный аудиоплеер в стиле Windows 95</text>
+</svg>

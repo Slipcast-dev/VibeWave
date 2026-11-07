@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="166" viewBox="0 0 1280 166" role="img" aria-labelledby="title desc">
+  <title id="title">VibeWave 0.5.0 — macOS Intel</title>
+  <desc id="desc">Релиз для Intel x86_64. Локальная подпись ad hoc, без нотариализации Apple. ZIP и SHA-256 доступны в приватном релизе.</desc>
+  <rect width="1280" height="166" fill="#c0c0c0"/>
+  <path d="M1 165V1H1279" fill="none" stroke="#fff" stroke-width="2"/><path d="M1279 1V165H1" fill="none" stroke="#404040" stroke-width="2"/>
+  <rect x="10" y="10" width="1260" height="146" fill="#000080"/>
+  <g fill="#fff" font-family="Arial, sans-serif"><text x="31" y="51" font-size="29" font-weight="700">Релиз 0.5.0 · macOS Intel (x86_64)</text><text x="31" y="91" font-size="22">Локальная подпись (ad hoc) · Без нотариализации Apple</text><text x="31" y="130" font-size="18">ZIP + SHA-256 · Доступ по правам приватного репозитория</text></g>
+</svg>

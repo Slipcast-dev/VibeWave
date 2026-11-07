@@ -1,0 +1,35 @@
+name: macOS CI
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/assets/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/assets/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-and-test:
+    name: Intel · build and core tests
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: swift --version
+      - name: Core tests
+        run: swift test
+      - name: Build local app
+        run: zsh scripts/build-app.sh
+      - name: Verify signature
+        run: codesign --verify --strict --verbose=2 dist/VibeWave.app
