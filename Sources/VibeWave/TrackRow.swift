@@ -1,142 +1,123 @@
 import SwiftUI
 import VibeWaveCore
 
-/// Строка поддерживает перенос перед другим треком и контекстное удаление.
+/// Строка плейлиста: «N. Название» слева, время справа. Перетаскивается вся строка
+/// (перед другим треком или в конец); контекстное меню — действия с источником.
+/// sourceID — откуда трек (для действий), dropTargetID — куда падают перетаскивания.
 struct TrackRow: View {
     @ObservedObject var model: PlayerModel
     let track: Track
-    let tracks: [Track]
-    let playlistID: UUID?
-    let index: Int
+    let number: Int
+    let sourceID: UUID?
+    var dropTargetID: UUID?
+    var libraryReorder = false
     let theme: PlayerTheme
-    let columns: TrackColumnWidths
+    let play: () -> Void
     @State private var targeted = false
 
     var body: some View {
-        Button { model.play(track, in: tracks, playlistID: playlistID) } label: {
-            HStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    Image(systemName: "line.3.horizontal").font(.system(size: 12, weight: .bold))
-                        .frame(width: 18, height: 20).contentShape(Rectangle())
-                        .help("Потяните мышью: поставить перед другим треком или в конец")
-                        .onDrag { trackProvider(track, playlistID: playlistID) }
-                    Group {
-                        if model.current?.id == track.id {
-                            Image(systemName: model.playing ? "speaker.wave.2.fill" : "pause.fill")
-                        } else { Text("\(index + 1)") }
-                    }.font(.custom("Arial", size: 12)).frame(maxWidth: .infinity)
-                }.padding(.horizontal, 5).frame(width: columns.number)
-                divider
-                Text(track.title).font(.custom("Arial", size: 13)).lineLimit(1)
-                    .padding(.horizontal, 7).frame(width: columns.title, alignment: .leading).help(track.title)
-                divider
-                Text(track.url.pathExtension.uppercased()).font(.custom("Arial", size: 13).weight(.semibold))
-                    .padding(.horizontal, 7).frame(width: columns.format, alignment: .leading)
-                divider
-                Text(timeLabel(track.duration)).font(.custom("Arial", size: 13).weight(.semibold)).monospacedDigit()
-                    .padding(.horizontal, 7).frame(width: columns.duration, alignment: .trailing)
-                divider
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 8)
-            .foregroundColor(model.current?.id == track.id ? theme.selectionText : theme.foreground)
-            .background(model.current?.id == track.id ? theme.selection : theme.background)
-            .contentShape(Rectangle())
-            .overlay(alignment: .top) {
-                if targeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
-            }
+        let isCurrent = model.current?.id == track.id
+        // Не Button: на macOS кнопка забирает нажатие мыши, и перетаскивание не начинается.
+        // Щелчок запускает трек, протяжка мышью — переносит строку.
+        HStack(spacing: 6) {
+            Group {
+                if isCurrent { Image(systemName: model.playing ? "speaker.wave.2.fill" : "pause.fill").font(.system(size: 9)) }
+                else { Text("\(number).") }
+            }.frame(minWidth: 22, alignment: .trailing)
+            Text(track.title).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 4)
+            Text(timeLabel(track.duration)).monospacedDigit()
         }
-        .buttonStyle(.plain)
-        .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: playlistID, before: track.id, targeted: $targeted))
-        .contextMenu { TrackContextMenu(model: model, track: track, tracks: tracks, playlistID: playlistID) }
-    }
-    private var divider: some View {
-        Color.clear.frame(width: TrackColumnWidths.divider)
+        .font(.custom("Arial", size: 12))
+        .padding(.horizontal, 5).padding(.vertical, 3)
+        .foregroundColor(isCurrent ? theme.selectionText : theme.listText)
+        .background(isCurrent ? theme.selection : Color.clear)
+        .contentShape(Rectangle())
+        .overlay(alignment: .top) {
+            if targeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
+        }
+        .onTapGesture(perform: play)
+        .help("\(track.title)\nЩелчок — играть, перетащите мышью — изменить порядок")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Воспроизвести", play)
+        .onDrag { trackProvider(track, playlistID: sourceID) }
+        .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: dropTargetID, before: track.id,
+                                                                          libraryReorder: libraryReorder, targeted: $targeted))
+        .contextMenu { TrackContextMenu(model: model, track: track, sourceID: sourceID, libraryOrder: libraryReorder) }
     }
 }
 
-/// Один набор действий для основной таблицы и постоянного списка вне плейлистов.
+/// Один набор действий для всех списков; «Выше/Ниже» работают в том порядке, который виден.
 struct TrackContextMenu: View {
     @ObservedObject var model: PlayerModel
     let track: Track
-    let tracks: [Track]
-    let playlistID: UUID?
-    private var index: Int { tracks.firstIndex(where: { $0.id == track.id }) ?? 0 }
+    let sourceID: UUID?
+    var libraryOrder = false
+    private var ids: [UUID] { libraryOrder ? model.libraryEntries.map(\.id) : (model.tracks(in: sourceID) ?? []).map(\.id) }
+    private var index: Int { ids.firstIndex(of: track.id) ?? 0 }
+    private var sourceName: String {
+        model.playlists.first { $0.id == sourceID }?.name ?? model.folders.first { $0.id == sourceID }?.name ?? "Вне плейлистов"
+    }
     var body: some View {
-        Button("Выше") { model.moveTrackBy(track.id, in: playlistID, offset: -1) }.disabled(index == 0)
-        Button("Ниже") { model.moveTrackBy(track.id, in: playlistID, offset: 1) }.disabled(index >= tracks.count - 1)
-        if playlistID == nil, !model.playlists.isEmpty {
-            Menu("Добавить в плейлист") {
-                ForEach(model.playlists) { playlist in
+        Text("Источник: \(sourceName)")
+        Divider()
+        Button("Выше") { move(-1) }.disabled(index == 0)
+        Button("Ниже") { move(1) }.disabled(index >= ids.count - 1)
+        let targets = model.playlists.filter { $0.id != sourceID }
+        if !targets.isEmpty {
+            Menu(model.isPlaylist(sourceID) ? "Переместить в плейлист" : "Добавить в плейлист") {
+                ForEach(targets) { playlist in
                     Button(playlist.name) {
-                        model.moveTrack(TrackDragPayload(playlistID: nil, trackID: track.id), to: playlist.id, before: nil)
+                        model.moveTrack(TrackDragPayload(playlistID: sourceID, trackID: track.id), to: playlist.id, before: nil)
                     }
                 }
             }
         }
         Divider()
-        Button(playlistID == nil ? "Убрать из открытых файлов" : "Убрать из плейлиста", role: .destructive) {
-            model.removeTrack(track.id, from: playlistID)
-        }
+        Button(removeTitle, role: .destructive) { model.removeTrack(track.id, from: sourceID) }
     }
-
+    private var removeTitle: String {
+        if model.isPlaylist(sourceID) { return "Убрать из плейлиста" }
+        if model.isFolder(sourceID) { return "Скрыть из папки" }
+        return "Убрать из списка"
+    }
+    private func move(_ offset: Int) {
+        if libraryOrder { model.moveInLibraryBy(track.id, offset: offset) }
+        else { model.moveTrackBy(track.id, in: sourceID, offset: offset) }
+    }
 }
 
+/// Пункт единого сайдбара: «Вся музыка», плейлист или папка.
 /// Обработчик drop установлен на самой кнопке, чтобы сохранялись обычные клики.
-struct PlaylistButton: View {
+struct SidebarRow<Menu: View>: View {
     @ObservedObject var model: PlayerModel
-    let playlist: Playlist
+    let id: UUID?
+    let icon: String
+    let title: String
+    let count: Int
     let theme: PlayerTheme
-    let rename: () -> Void
+    var acceptsDrop = true
+    @ViewBuilder let menu: () -> Menu
     @State private var targeted = false
+    private var isSelected: Bool { id == nil ? model.isLibrarySelected : model.selectedID == id }
     var body: some View {
-        Button { model.selectedID = playlist.id } label: {
+        Button { model.selectedID = id } label: {
             HStack(spacing: 7) {
-                Image(systemName: "folder")
-                Text(playlist.name).lineLimit(1)
-                Spacer()
+                Image(systemName: icon).frame(width: 14)
+                Text(title).lineLimit(1)
+                Spacer(minLength: 2)
+                Text("\(count)").font(.custom("Arial", size: 10))
+                    .foregroundColor(isSelected ? theme.selectionText : theme.secondary)
             }
-            .padding(7)
-            .foregroundColor(model.selectedID == playlist.id ? theme.selectionText : theme.foreground)
-            .background(model.selectedID == playlist.id ? theme.selection : theme.background)
+            .padding(.horizontal, 7).padding(.vertical, 6)
+            .foregroundColor(isSelected ? theme.selectionText : theme.listText)
+            .background(isSelected ? theme.selection : theme.background)
             .contentShape(Rectangle())
             .overlay(Rectangle().stroke(targeted ? theme.accent : .clear, lineWidth: 2).allowsHitTesting(false))
         }
-        .buttonStyle(.plain)
-        .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: playlist.id, targeted: $targeted))
-        .contextMenu {
-            Button("Переименовать", action: rename)
-            Button("Удалить плейлист", role: .destructive) { model.deletePlaylist(playlist.id) }
-        }
-    }
-}
-
-
-/// Очередь видна независимо от выбранного плейлиста; действия имеют явный источник nil.
-struct OpenQueueRow: View {
-    @ObservedObject var model: PlayerModel
-    let track: Track
-    let theme: PlayerTheme
-    @State private var targeted = false
-    var body: some View {
-        Button { model.play(track, in: model.openTracks, playlistID: nil) } label: {
-            HStack(spacing: 6) {
-                Image(systemName: model.current?.id == track.id ? "speaker.wave.2.fill" : "music.note")
-                    .font(.system(size: 11)).frame(width: 14)
-                Text(track.title).font(.custom("Arial", size: 12)).lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 5).padding(.vertical, 6)
-            .foregroundColor(model.current?.id == track.id ? theme.selectionText : theme.foreground)
-            .background(model.current?.id == track.id ? theme.selection : theme.background)
-            .contentShape(Rectangle())
-            .overlay(alignment: .top) {
-                if targeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
-            }
-        }
-        .buttonStyle(.plain).help(track.title)
-        .onDrag { trackProvider(track, playlistID: nil) }
-        .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: nil, before: track.id, targeted: $targeted))
-        .contextMenu { TrackContextMenu(model: model, track: track, tracks: model.openTracks, playlistID: nil) }
+        .buttonStyle(.plain).help(title)
+        .onDrop(of: acceptsDrop ? TrackDropDelegate.types : [], delegate: TrackDropDelegate(model: model, playlistID: id, targeted: $targeted))
+        .contextMenu(menuItems: menu)
     }
 }

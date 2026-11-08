@@ -48,15 +48,27 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(try store.load(), [playlist])
     }
 
-    func testPlaybackOrderAndReconciliation() {
-        let tracks = (0..<5).map { Track(url: URL(fileURLWithPath: "/tmp/\($0).mp3"), duration: 10) }
-        XCTAssertEqual(PlaybackQueue.make(tracks: tracks, startingAt: tracks[2].id, order: .inOrder), tracks)
-        let shuffled = PlaybackQueue.make(tracks: tracks, startingAt: tracks[2].id, order: .shuffled)
-        XCTAssertEqual(shuffled.first?.id, tracks[2].id)
-        XCTAssertEqual(Set(shuffled.map(\.id)), Set(tracks.map(\.id)))
-        XCTAssertEqual(shuffled.count, tracks.count)
-        let remaining = Array(tracks.prefix(3))
-        XCTAssertEqual(PlaybackQueue.reconcile(shuffled, with: remaining, order: .shuffled), shuffled.filter { remaining.contains($0) })
+    func testManualOrderAndSnapshotCompatibility() throws {
+        let ids = (0..<4).map { _ in UUID() }
+        XCTAssertEqual(ManualOrder.arrange(ids, order: [ids[2], ids[0]], id: { $0 }), [ids[2], ids[0], ids[1], ids[3]])
+        XCTAssertEqual(ManualOrder.move(ids[3], before: ids[0], in: ids), [ids[3], ids[0], ids[1], ids[2]])
+        XCTAssertEqual(ManualOrder.move(ids[0], before: nil, in: ids), [ids[1], ids[2], ids[3], ids[0]])
+        XCTAssertNil(ManualOrder.move(ids[0], before: ids[0], in: ids))
+        XCTAssertNil(ManualOrder.move(UUID(), before: nil, in: ids))
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = LibraryStore(url: folder.appendingPathComponent("library.json"))
+        let track = Track(url: URL(fileURLWithPath: "/tmp/a.mp3"), duration: 1)
+        let snapshot = LibrarySnapshot(playlists: [Playlist(name: "A")],
+                                       folders: [MusicFolder(url: URL(fileURLWithPath: "/tmp/music"), tracks: [track])],
+                                       order: [track.id])
+        try store.save(snapshot)
+        XCTAssertEqual(try store.loadSnapshot(), snapshot)
+        XCTAssertEqual(try store.load(), snapshot.playlists)
+        var music = snapshot.folders[0]
+        let added = Track(url: URL(fileURLWithPath: "/tmp/music/b.mp3"), duration: 2)
+        music.merge(scanned: [Track(url: track.url, duration: 1), added])
+        XCTAssertEqual(music.tracks.map(\.id), [track.id, added.id])
     }
 
     func testTimeLabels() {

@@ -12,6 +12,8 @@ struct TrackDropDelegate: DropDelegate {
     let model: PlayerModel
     let playlistID: UUID?
     var before: UUID? = nil
+    /// Перестановка в общем списке «Вся музыка» вместо переноса между источниками.
+    var libraryReorder = false
     @Binding var targeted: Bool
 
     static let types = [UTType.vibeWaveTrack, .fileURL]
@@ -29,7 +31,8 @@ struct TrackDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         targeted = false
-        return DropReceiver.receive(info.itemProviders(for: Self.types), model: model, playlistID: playlistID, before: before)
+        return DropReceiver.receive(info.itemProviders(for: Self.types), model: model, playlistID: playlistID,
+                                    before: before, libraryReorder: libraryReorder)
     }
 }
 
@@ -42,7 +45,8 @@ enum DropReceiver {
     }
 
     @discardableResult
-    static func receive(_ providers: [NSItemProvider], model: PlayerModel, playlistID: UUID?, before: UUID? = nil) -> Bool {
+    static func receive(_ providers: [NSItemProvider], model: PlayerModel, playlistID: UUID?, before: UUID? = nil,
+                        libraryReorder: Bool = false) -> Bool {
         guard !model.importing else { return false }
         if let item = providers.first(where: isInternal) {
             item.loadDataRepresentation(forTypeIdentifier: UTType.vibeWaveTrack.identifier) { data, _ in
@@ -51,7 +55,8 @@ enum DropReceiver {
                     return
                 }
                 DispatchQueue.main.async {
-                    model.moveTrack(payload, to: playlistID, before: before)
+                    if libraryReorder { model.moveInLibrary(payload.trackID, before: before) }
+                    else { model.moveTrack(payload, to: playlistID, before: before) }
                 }
             }
             return true

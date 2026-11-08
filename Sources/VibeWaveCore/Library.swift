@@ -53,19 +53,94 @@ public struct Playlist: Codable, Identifiable, Equatable {
 
 }
 
+/// Папка с музыкой на диске: список треков пересканируется по команде пользователя.
+public struct MusicFolder: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var url: URL
+    public var bookmark: Data?
+    public var name: String
+    public var tracks: [Track]
+
+    public init(url: URL, bookmark: Data? = nil, tracks: [Track] = []) {
+        id = UUID()
+        self.url = url
+        self.bookmark = bookmark
+        name = url.lastPathComponent
+        self.tracks = tracks
+    }
+
+    /// Пересканирование сохраняет ID и порядок известных файлов, новые добавляются в конец.
+    public mutating func merge(scanned: [Track]) {
+        let found = Dictionary(scanned.map { ($0.url.standardizedFileURL, $0) }, uniquingKeysWith: { first, _ in first })
+        let kept = tracks.filter { found[$0.url.standardizedFileURL] != nil }
+        let known = Set(kept.map { $0.url.standardizedFileURL })
+        tracks = kept + scanned.filter { !known.contains($0.url.standardizedFileURL) }
+    }
+}
+
+/// Всё, что хранится на диске: плейлисты, папки и ручной порядок раздела «Вся музыка».
+public struct LibrarySnapshot: Codable, Equatable {
+    public var playlists: [Playlist]
+    public var folders: [MusicFolder]
+    public var order: [UUID]
+
+    public init(playlists: [Playlist] = [], folders: [MusicFolder] = [], order: [UUID] = []) {
+        self.playlists = playlists
+        self.folders = folders
+        self.order = order
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        playlists = try container.decode([Playlist].self, forKey: .playlists)
+        folders = try container.decodeIfPresent([MusicFolder].self, forKey: .folders) ?? []
+        order = try container.decodeIfPresent([UUID].self, forKey: .order) ?? []
+    }
+}
+
 /// Атомарная запись защищает библиотеку от частично сохранённого JSON.
+/// Старый формат (массив плейлистов) читается без изменений файла.
 public struct LibraryStore {
     public let url: URL
     public init(url: URL) { self.url = url }
 
-    public func load() throws -> [Playlist] {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        return try JSONDecoder().decode([Playlist].self, from: Data(contentsOf: url))
+    public func loadSnapshot() throws -> LibrarySnapshot {
+        guard FileManager.default.fileExists(atPath: url.path) else { return LibrarySnapshot() }
+        let data = try Data(contentsOf: url)
+        if let legacy = try? JSONDecoder().decode([Playlist].self, from: data) {
+            return LibrarySnapshot(playlists: legacy)
+        }
+        return try JSONDecoder().decode(LibrarySnapshot.self, from: data)
+    }
+
+    public func load() throws -> [Playlist] { try loadSnapshot().playlists }
+
+    public func save(_ snapshot: LibrarySnapshot) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
     }
 
     public func save(_ playlists: [Playlist]) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(playlists).write(to: url, options: .atomic)
+        try save(LibrarySnapshot(playlists: playlists))
+    }
+}
+
+/// Ручной порядок общего списка: известные ID идут по порядку, новые — в конце.
+public enum ManualOrder {
+    public static func arrange<T>(_ items: [T], order: [UUID], id: (T) -> UUID) -> [T] {
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let ranked = items.filter { rank[id($0)] != nil }.sorted { rank[id($0)]! < rank[id($1)]! }
+        return ranked + items.filter { rank[id($0)] == nil }
+    }
+
+    /// Возвращает новый порядок или nil, если перенос невозможен.
+    public static func move(_ item: UUID, before destination: UUID?, in ids: [UUID]) -> [UUID]? {
+        guard item != destination, ids.contains(item),
+              destination == nil || ids.contains(destination!) else { return nil }
+        var result = ids.filter { $0 != item }
+        let index = destination.flatMap { value in result.firstIndex(of: value) } ?? result.endIndex
+        result.insert(item, at: index)
+        return result
     }
 }
 
@@ -76,7 +151,7 @@ public func timeLabel(_ seconds: TimeInterval) -> String {
 }
 
 
-/// nil в playlistID обозначает временную очередь открытых файлов, а не плейлист.
+/// playlistID — ID источника (плейлист или папка); nil — музыка вне плейлистов.
 public struct TrackDragPayload: Codable, Equatable {
     public let playlistID: UUID?
     public let trackID: UUID
@@ -86,25 +161,4 @@ public struct TrackDragPayload: Codable, Equatable {
     }
 }
 
-/// Режим меняет только очередь проигрывания, не переставляя записи в библиотеке.
-public enum PlaybackOrder: String, CaseIterable {
-    case inOrder, shuffled
-    public var title: String { self == .inOrder ? "По списку" : "Случайный" }
-}
 
-/// Чистые операции над очередью: случайный режим не повторяет треки в одном проходе.
-public enum PlaybackQueue {
-    public static func make(tracks: [Track], startingAt id: UUID, order: PlaybackOrder) -> [Track] {
-        guard order == .shuffled, let current = tracks.first(where: { $0.id == id }) else { return tracks }
-        return [current] + tracks.filter { $0.id != id }.shuffled()
-    }
-
-    /// Добавление и удаление файлов сохраняют уже выбранную случайную последовательность.
-    public static func reconcile(_ queue: [Track], with tracks: [Track], order: PlaybackOrder) -> [Track] {
-        guard order == .shuffled else { return tracks }
-        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let existing = queue.compactMap { byID[$0.id] }
-        let included = Set(existing.map(\.id))
-        return existing + tracks.filter { !included.contains($0.id) }.shuffled()
-    }
-}

@@ -43,15 +43,23 @@ extension View {
 /// Состояния disabled и фокус остаются частью обычной SwiftUI Button.
 struct RetroButtonStyle: ButtonStyle {
     let theme: PlayerTheme
+    /// Компактная кнопка для панелей плеера и плейлиста.
+    var compact = false
+    /// Фиксированная ширина (кнопки транспорта одинакового размера).
+    var width: CGFloat? = nil
+    /// Включённый переключатель рисуется вдавленным.
+    var isOn = false
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
+        let sunken = configuration.isPressed || isOn
         configuration.label
-            .font(.custom("Arial", size: 12))
+            .font(.custom("Arial", size: compact ? 11 : 12))
             .foregroundColor(enabled ? theme.foreground : theme.secondary.opacity(0.6))
-            .offset(x: configuration.isPressed ? 1 : 0, y: configuration.isPressed ? 1 : 0)
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .background(theme.panel)
-            .retroBevel(theme, sunken: configuration.isPressed)
+            .offset(x: sunken ? 1 : 0, y: sunken ? 1 : 0)
+            .frame(width: width)
+            .padding(.horizontal, width == nil ? (compact ? 7 : 10) : 0).padding(.vertical, compact ? 4 : 7)
+            .background(isOn ? Color(white: 0.85) : theme.panel)
+            .retroBevel(theme, sunken: sunken)
             .contentShape(Rectangle())
     }
 }

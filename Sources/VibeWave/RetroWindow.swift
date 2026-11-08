@@ -39,7 +39,7 @@ final class RetroWindowController: NSWindowController {
         window.hasShadow = true
         window.isOpaque = true
         window.backgroundColor = NSColor.windowBackgroundColor
-        window.contentMinSize = NSSize(width: 720, height: 440)
+        window.contentMinSize = NSSize(width: 390, height: 440)
         window.contentView = NSHostingView(rootView: ContentView(model: model))
         super.init(window: window)
         if !window.setFrameUsingName("VibeWaveMainWindow") { window.center() }

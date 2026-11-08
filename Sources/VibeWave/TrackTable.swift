@@ -1,124 +1,110 @@
-import AppKit
 import SwiftUI
 import VibeWaveCore
 
-/// Общие размеры для заголовков и строк исключают расхождение столбцов.
-struct TrackColumnWidths {
-    var number: CGFloat
-    var title: CGFloat
-    var format: CGFloat
-    var duration: CGFloat
-    static let divider: CGFloat = 7
-    var total: CGFloat { number + title + format + duration + Self.divider * 4 }
-}
-
+/// Список плейлиста: выбранный плейлист/папка или раздел «Вся музыка»
+/// (общий список с ручным порядком либо разделы по плейлистам).
 struct TrackTable: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
     @State private var endTargeted = false
-    @AppStorage("columns.number") private var number = 56.0
-    @AppStorage("columns.title") private var title = 360.0
-    @AppStorage("columns.format") private var format = 100.0
-    @AppStorage("columns.duration") private var duration = 92.0
 
-    private var columns: TrackColumnWidths {
-        TrackColumnWidths(number: bounded(number, 52...120), title: bounded(title, 160...1200),
-                          format: bounded(format, 76...280), duration: bounded(duration, 76...280))
+    private var library: Bool { model.isLibrarySelected }
+    private var flatLibrary: Bool { library && !model.groupByPlaylists }
+    private var isEmpty: Bool {
+        model.visibleTracks.isEmpty && !(library && model.groupByPlaylists && !model.librarySections.allSatisfy(\.tracks.isEmpty))
     }
-    private func bounded(_ value: Double, _ range: ClosedRange<Double>) -> CGFloat {
-        CGFloat(value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : range.lowerBound)
-    }
+
     var body: some View {
-        GeometryReader { geometry in
-            ScrollView(.horizontal) {
-                VStack(spacing: 0) {
-                    header
-                    if model.visibleTracks.isEmpty {
-                        VStack(spacing: 10) {
-                            Spacer()
-                            Image(systemName: "music.note").font(.system(size: 24)).foregroundColor(theme.secondary)
-                            Text(model.selectedID == nil ? "Откройте музыку" : "Добавьте музыку в плейлист").fontWeight(.bold)
-                            Text("Перетащите сюда файлы MP3 и FLAC").foregroundColor(theme.secondary)
-                            Spacer()
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        ScrollView(.vertical) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(model.visibleTracks.enumerated()), id: \.element.id) { index, track in
-                                    TrackRow(model: model, track: track, tracks: model.visibleTracks,
-                                             playlistID: model.selectedID, index: index, theme: theme, columns: columns)
-                                }
-                                Color.clear.frame(height: 32).contentShape(Rectangle())
-                                    .background(endTargeted ? theme.selection.opacity(0.18) : .clear)
-                                    .overlay(alignment: .top) {
-                                        if endTargeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
-                                    }
-                                    .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: model.selectedID, targeted: $endTargeted))
-                            }
-                        }
-                    }
+        Group {
+            if isEmpty {
+                emptyState
+            } else {
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 0) {
+                        rows
+                        endDropZone
+                    }.padding(.vertical, 2)
                 }
-                .frame(width: max(geometry.size.width, columns.total), height: geometry.size.height)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.background).retroBevel(theme, sunken: true)
     }
-    private var header: some View {
-        HStack(spacing: 0) {
-            cell("№", width: columns.number)
-            ColumnResizer(value: $number, limits: 52...120, initial: 56, label: "Номер", theme: theme)
-            cell("Название", width: columns.title)
-            ColumnResizer(value: $title, limits: 160...1200, initial: 360, label: "Название", theme: theme)
-            cell("Формат", width: columns.format)
-            ColumnResizer(value: $format, limits: 76...280, initial: 100, label: "Формат", theme: theme)
-            cell("Время", width: columns.duration)
-            ColumnResizer(value: $duration, limits: 76...280, initial: 92, label: "Время", theme: theme)
-            Spacer(minLength: 0)
+
+    @ViewBuilder private var rows: some View {
+        if !library {
+            let tracks = model.visibleTracks
+            let source = model.selectedID
+            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                TrackRow(model: model, track: track, number: index + 1, sourceID: source, dropTargetID: source,
+                         theme: theme) { model.play(track, in: tracks, playlistID: source) }
+            }
+        } else if model.groupByPlaylists {
+            ForEach(model.librarySections) { section in
+                SectionHeader(model: model, section: section, theme: theme)
+                ForEach(Array(section.tracks.enumerated()), id: \.element.id) { index, track in
+                    TrackRow(model: model, track: track, number: index + 1, sourceID: section.sourceID,
+                             dropTargetID: section.sourceID, theme: theme) { model.playLibrary(track, section: section.id) }
+                }
+            }
+        } else {
+            ForEach(Array(model.libraryEntries.enumerated()), id: \.element.id) { index, entry in
+                TrackRow(model: model, track: entry.track, number: index + 1, sourceID: entry.sourceID,
+                         dropTargetID: nil, libraryReorder: true, theme: theme) { model.playLibrary(entry.track) }
+            }
         }
-        .background(theme.panel).retroBevel(theme)
     }
-    private func cell(_ text: String, width: CGFloat) -> some View {
-        Text(text).font(.custom("Arial", size: 13).weight(.bold))
-            .padding(.horizontal, 7).frame(width: width, alignment: .leading)
-            .padding(.vertical, 8).foregroundColor(theme.foreground)
+
+    private var endDropZone: some View {
+        Color.clear.frame(height: 32).contentShape(Rectangle())
+            .background(endTargeted ? theme.selection.opacity(0.18) : .clear)
+            .overlay(alignment: .top) {
+                if endTargeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
+            }
+            .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: library ? nil : model.selectedID,
+                                                                              libraryReorder: flatLibrary, targeted: $endTargeted))
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Spacer()
+            Image(systemName: "music.note").font(.system(size: 24)).foregroundColor(theme.secondary)
+            Text(model.selected != nil ? "Добавьте музыку в плейлист" : model.selectedFolder != nil ? "В папке нет MP3 и FLAC" : "Добавьте музыку")
+                .fontWeight(.bold)
+            Text("Перетащите сюда файлы MP3 и FLAC или папку с музыкой").foregroundColor(theme.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }.padding(.horizontal, 10).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-/// Изменение ширины не запускает перетаскивание трека; двойной щелчок сбрасывает размер.
-private struct ColumnResizer: View {
-    @Binding var value: Double
-    let limits: ClosedRange<Double>
-    let initial: Double
-    let label: String
+/// Заголовок раздела в режиме «По плейлистам»; в него можно бросить трек (кроме папок).
+private struct SectionHeader: View {
+    @ObservedObject var model: PlayerModel
+    let section: LibrarySection
     let theme: PlayerTheme
-    @State private var origin: Double?
-    @State private var hovered = false
+    @State private var targeted = false
+    private var icon: String {
+        switch section.kind {
+        case .playlist: return "music.note.list"
+        case .folder: return "folder"
+        case .loose: return "tray"
+        }
+    }
     var body: some View {
-        Rectangle().fill(hovered ? theme.accent.opacity(0.25) : theme.panel)
-            .overlay(Rectangle().fill(theme.shadow).frame(width: 1))
-            .frame(width: TrackColumnWidths.divider, height: 33)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                hovered = inside
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .onDisappear { if hovered { NSCursor.pop() } }
-            .gesture(DragGesture(minimumDistance: 1).onChanged { event in
-                if origin == nil { origin = value.isFinite ? value : initial }
-                value = min(limits.upperBound, max(limits.lowerBound, (origin ?? initial) + Double(event.translation.width)))
-            }.onEnded { _ in origin = nil })
-            .onTapGesture(count: 2) { value = initial }
-            .help("Ширина: \(label). Перетащите границу; двойной щелчок — сброс.")
-            .accessibilityLabel("Ширина столбца \(label)")
-            .accessibilityValue("\(Int(value.isFinite ? value : initial))")
-            .accessibilityAdjustableAction { direction in
-                let delta: Double
-                switch direction {
-                case .increment: delta = 10
-                case .decrement: delta = -10
-                @unknown default: return
-                }
-                value = min(limits.upperBound, max(limits.lowerBound, (value.isFinite ? value : initial) + delta))
-            }
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+            Text(section.title).fontWeight(.bold).lineLimit(1)
+            Text("(\(section.tracks.count))").foregroundColor(theme.secondary)
+            Spacer(minLength: 0)
+        }
+        .font(.custom("Arial", size: 12))
+        .foregroundColor(theme.foreground)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.panel).retroBevel(theme)
+        .overlay(Rectangle().stroke(targeted ? theme.accent : .clear, lineWidth: 2).allowsHitTesting(false))
+        .onDrop(of: section.kind == .folder ? [] : TrackDropDelegate.types,
+                delegate: TrackDropDelegate(model: model, playlistID: section.sourceID, targeted: $targeted))
     }
 }

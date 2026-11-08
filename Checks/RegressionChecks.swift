@@ -128,22 +128,14 @@ struct RegressionChecks {
         dropModel.moveTrackBy(firstOutside.id, in: nil, offset: -1)
         precondition(dropModel.openTracks.first?.id == firstOutside.id)
 
-        // Случайный режим не повторяет элементы и не меняет сохранённый порядок библиотеки.
-        let ordered = [a, b, c]
-        let mixed = PlaybackQueue.make(tracks: ordered, startingAt: b.id, order: .shuffled)
-        precondition(mixed.first?.id == b.id && Set(mixed.map(\.id)) == Set(ordered.map(\.id)))
-        precondition(PlaybackQueue.make(tracks: ordered, startingAt: b.id, order: .inOrder) == ordered)
-        let reconciled = PlaybackQueue.reconcile(mixed, with: [a, b], order: .shuffled)
-        precondition(reconciled == mixed.filter { $0.id != c.id })
-
-        // Следующий/предыдущий идут по одному плану, а не создают новый shuffle на каждом шаге.
+        // Следующий/предыдущий идут по списку; ручной перенос сразу меняет следующий трек.
         let orderModel = PlayerModel(supportDirectory: support.appendingPathComponent("OrderCheck"))
         orderModel.openTracks = dropModel.openTracks
         let starting = orderModel.openTracks[0]
         orderModel.play(starting, in: orderModel.openTracks)
         if orderModel.playing { orderModel.toggle() }
-        orderModel.setPlaybackOrder(.shuffled)
         let expectedNext = orderModel.nextTrack!
+        precondition(expectedNext.id == orderModel.openTracks[1].id, "Очередь идёт по списку")
         orderModel.next()
         if orderModel.playing { orderModel.toggle() }
         precondition(orderModel.current?.id == expectedNext.id)
@@ -151,7 +143,6 @@ struct RegressionChecks {
         if orderModel.playing { orderModel.toggle() }
         precondition(orderModel.current?.id == starting.id && orderModel.nextTrack?.id == expectedNext.id)
         orderModel.moveTrackBy(starting.id, in: nil, offset: 1)
-        precondition(orderModel.playbackOrder == .inOrder, "Перетаскивание/ручной перенос отменяют shuffle")
         precondition(orderModel.openTracks.last?.id == starting.id && orderModel.nextTrack == nil)
         orderModel.moveTrackBy(starting.id, in: nil, offset: -1)
         precondition(orderModel.nextTrack?.id == expectedNext.id, "Следующий трек соответствует ручному порядку")
@@ -160,7 +151,56 @@ struct RegressionChecks {
         dropModel.removeTrack(firstOutside.id, from: nil)
         precondition(!dropModel.openTracks.contains(where: { $0.id == firstOutside.id }))
         precondition(dropModel.playlists == originalPlaylist && dropModel.selectedID == selectedID)
-        print("PASS: explicit outside-queue actions, manual order, shuffle uniqueness and navigation history")
+        print("PASS: explicit outside-queue actions, manual order, in-order navigation")
+        // Папки, общий список «Вся музыка», ручной порядок и группировка.
+        let libraryModel = PlayerModel(supportDirectory: support.appendingPathComponent("LibraryCheck"))
+        libraryModel.groupByPlaylists = false
+        libraryModel.receiveFiles([fixtures])
+        waitFor { !libraryModel.importing }
+        precondition(libraryModel.error == nil && libraryModel.folders.count == 1, libraryModel.error ?? "Папка не добавлена")
+        let folder = libraryModel.folders[0]
+        precondition(folder.tracks.count == 2 && libraryModel.selectedID == folder.id, "Сканирование папки")
+        libraryModel.createPlaylist("Сборник")
+        let mixID = libraryModel.selectedID!
+        libraryModel.moveTrack(TrackDragPayload(playlistID: folder.id, trackID: folder.tracks[0].id), to: mixID, before: nil)
+        precondition(libraryModel.folders[0].tracks.count == 2 && libraryModel.selected?.tracks.count == 1, "Из папки трек копируется")
+        precondition(libraryModel.libraryEntries.count == 2, "Общий список без дублей")
+        libraryModel.moveTrack(TrackDragPayload(playlistID: mixID, trackID: folder.tracks[0].id), to: folder.id, before: nil)
+        precondition(libraryModel.selected?.tracks.count == 1, "В папку извне ничего не переносится")
+        let before = libraryModel.libraryEntries.map(\.id)
+        libraryModel.moveInLibrary(before[1], before: before[0])
+        precondition(libraryModel.libraryEntries.map(\.id) == [before[1], before[0]], "Ручной порядок общего списка")
+        precondition(libraryModel.playlists[0].tracks.count == 1 && libraryModel.folders[0].tracks.count == 2, "Порядок не трогает источники")
+        libraryModel.selectedID = nil
+        precondition(libraryModel.isLibrarySelected && libraryModel.visibleTracks.map(\.id) == [before[1], before[0]])
+        libraryModel.groupByPlaylists = true
+        precondition(libraryModel.librarySections.map(\.kind) == [.playlist, .folder, .loose])
+        precondition(libraryModel.visibleTracks.map(\.id) == [before[0], before[1]], "Очередь по разделам без повторов")
+        libraryModel.groupByPlaylists = false
+        // Недоступная папка при обновлении не теряет треки.
+        let missingRoot = support.appendingPathComponent("Missing", isDirectory: true)
+        try FileManager.default.createDirectory(at: missingRoot, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: audioURLs[1], to: missingRoot.appendingPathComponent("one.mp3"))
+        libraryModel.addFolders([missingRoot])
+        waitFor { !libraryModel.importing }
+        let missingID = libraryModel.folders.first { $0.url.standardizedFileURL == missingRoot.standardizedFileURL }!.id
+        try FileManager.default.removeItem(at: missingRoot)
+        libraryModel.rescanFolder(missingID)
+        waitFor { !libraryModel.importing }
+        precondition(libraryModel.folders.first { $0.id == missingID }?.tracks.count == 1 && libraryModel.error != nil, "Недоступная папка не очищается")
+        libraryModel.error = nil
+        libraryModel.removeFolder(missingID)
+        libraryModel.selectedID = nil
+        let reopened = PlayerModel(supportDirectory: support.appendingPathComponent("LibraryCheck"))
+        precondition(reopened.folders == libraryModel.folders && reopened.playlists == libraryModel.playlists, "Папки сохраняются")
+        precondition(reopened.libraryEntries.map(\.id) == [before[1], before[0]], "Порядок общего списка сохраняется")
+        libraryModel.receiveFiles([fixtures])
+        waitFor { !libraryModel.importing }
+        precondition(libraryModel.folders.count == 1, "Повторная папка не добавляется")
+        libraryModel.error = nil
+        libraryModel.removeFolder(folder.id)
+        precondition(libraryModel.folders.isEmpty && libraryModel.libraryEntries.count == 1)
+        print("PASS: folders, unified library list, manual library order, grouping, persistence")
         if CommandLine.arguments.count > 2 {
             let bundle = Bundle(path: CommandLine.arguments[2])!
             let iconURL = bundle.url(forResource: "VibeWaveIcon", withExtension: "icns")!
