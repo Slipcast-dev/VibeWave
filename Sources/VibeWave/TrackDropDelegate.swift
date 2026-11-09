@@ -8,6 +8,7 @@ extension UTType {
 
 /// Один обработчик для файлов Finder и записей внутри приложения.
 /// Данные item provider загружаются асинхронно, модель меняется на главном потоке.
+@MainActor
 struct TrackDropDelegate: DropDelegate {
     let model: PlayerModel
     let playlistID: UUID?
@@ -39,6 +40,7 @@ struct TrackDropDelegate: DropDelegate {
 /// Классификация опирается на реально объявленный тип provider, а не на
 /// широкое сопоставление DropInfo, которое может вернуть файлы для custom UTI.
 /// Этот же вход используется регрессионными тестами с настоящими providers.
+@MainActor
 enum DropReceiver {
     static func isInternal(_ provider: NSItemProvider) -> Bool {
         provider.registeredTypeIdentifiers.contains(UTType.vibeWaveTrack.identifier)
@@ -76,15 +78,16 @@ enum DropReceiver {
                 batch.group.leave()
             }
         }
-        batch.group.notify(queue: .main) {
-            model.receiveFiles(batch.urls, into: playlistID, before: before)
+        batch.group.notify(queue: .global(qos: .userInitiated)) {
+            let urls = batch.urls
+            DispatchQueue.main.async { model.receiveFiles(urls, into: playlistID, before: before) }
         }
         return true
     }
 }
 
 /// Доступ к результатам параллельных callbacks защищён блокировкой.
-private final class DroppedFileBatch {
+private final class DroppedFileBatch: @unchecked Sendable {
     let group = DispatchGroup()
     private let lock = NSLock()
     private var results: [URL?]

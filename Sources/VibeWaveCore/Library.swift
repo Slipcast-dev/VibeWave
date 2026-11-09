@@ -1,7 +1,7 @@
 import Foundation
 
 /// Ссылка на исходный файл: музыка не копируется в библиотеку приложения.
-public struct Track: Codable, Identifiable, Equatable {
+public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
     public var url: URL
     public var bookmark: Data?
@@ -22,7 +22,7 @@ public struct Track: Codable, Identifiable, Equatable {
 }
 
 /// Плейлист хранит порядок треков; удаление записи не удаляет файл с диска.
-public struct Playlist: Codable, Identifiable, Equatable {
+public struct Playlist: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var tracks: [Track]
@@ -54,7 +54,7 @@ public struct Playlist: Codable, Identifiable, Equatable {
 }
 
 /// Папка с музыкой на диске: список треков пересканируется по команде пользователя.
-public struct MusicFolder: Codable, Identifiable, Equatable {
+public struct MusicFolder: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
     public var url: URL
     public var bookmark: Data?
@@ -71,15 +71,22 @@ public struct MusicFolder: Codable, Identifiable, Equatable {
 
     /// Пересканирование сохраняет ID и порядок известных файлов, новые добавляются в конец.
     public mutating func merge(scanned: [Track]) {
-        let found = Dictionary(scanned.map { ($0.url.standardizedFileURL, $0) }, uniquingKeysWith: { first, _ in first })
-        let kept = tracks.filter { found[$0.url.standardizedFileURL] != nil }
-        let known = Set(kept.map { $0.url.standardizedFileURL })
-        tracks = kept + scanned.filter { !known.contains($0.url.standardizedFileURL) }
+        merge(files: scanned.map(\.url), added: scanned)
+    }
+
+    /// files — все файлы, найденные в папке; added — прочитанные треки для новых файлов.
+    /// Известные файлы не нужно открывать повторно: их записи остаются как есть,
+    /// исчезнувшие с диска убираются, новые добавляются в конец в порядке files.
+    public mutating func merge(files: [URL], added: [Track]) {
+        let present = Set(files.map(\.standardizedFileURL))
+        let kept = tracks.filter { present.contains($0.url.standardizedFileURL) }
+        var seen = Set(kept.map { $0.url.standardizedFileURL })
+        tracks = kept + added.filter { present.contains($0.url.standardizedFileURL) && seen.insert($0.url.standardizedFileURL).inserted }
     }
 }
 
 /// Всё, что хранится на диске: плейлисты, папки и ручной порядок раздела «Вся музыка».
-public struct LibrarySnapshot: Codable, Equatable {
+public struct LibrarySnapshot: Codable, Equatable, Sendable {
     public var playlists: [Playlist]
     public var folders: [MusicFolder]
     public var order: [UUID]
@@ -152,7 +159,7 @@ public func timeLabel(_ seconds: TimeInterval) -> String {
 
 
 /// playlistID — ID источника (плейлист или папка); nil — музыка вне плейлистов.
-public struct TrackDragPayload: Codable, Equatable {
+public struct TrackDragPayload: Codable, Equatable, Sendable {
     public let playlistID: UUID?
     public let trackID: UUID
     public init(playlistID: UUID?, trackID: UUID) {

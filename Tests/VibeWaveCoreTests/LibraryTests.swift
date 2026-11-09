@@ -71,6 +71,41 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(music.tracks.map(\.id), [track.id, added.id])
     }
 
+    func testMusicFilesKeepsOnlyRegularVisibleFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manager = FileManager.default
+        try manager.createDirectory(at: root.appendingPathComponent("Album.mp3/Disc"), withIntermediateDirectories: true)
+        try manager.createDirectory(at: root.appendingPathComponent("Player.app"), withIntermediateDirectories: true)
+        for name in ["Track 10.mp3", "Track 2.FLAC", "notes.txt", ".hidden.mp3", "Album.mp3/Disc/inner.flac", "Player.app/bundled.mp3"] {
+            try Data("x".utf8).write(to: root.appendingPathComponent(name))
+        }
+        try manager.createSymbolicLink(at: root.appendingPathComponent("link.mp3"),
+                                       withDestinationURL: root.appendingPathComponent("Track 10.mp3"))
+        try manager.createSymbolicLink(at: root.appendingPathComponent("dir-link.mp3"),
+                                       withDestinationURL: root.appendingPathComponent("Album.mp3"))
+        let files = try XCTUnwrap(try MusicFiles.collect(in: root))
+        XCTAssertEqual(Set(files.map(\.lastPathComponent)), ["Track 10.mp3", "Track 2.FLAC", "inner.flac", "link.mp3"])
+        let tracks = files.map(\.lastPathComponent).filter { $0.hasPrefix("Track") }
+        XCTAssertEqual(tracks, ["Track 2.FLAC", "Track 10.mp3"], "Порядок как в Finder")
+        XCTAssertNil(try MusicFiles.collect(in: root.appendingPathComponent("missing")))
+        XCTAssertNil(try MusicFiles.collect(in: root.appendingPathComponent("notes.txt")))
+        XCTAssertThrowsError(try MusicFiles.collect(in: root, isCancelled: { true })) { XCTAssertTrue($0 is CancellationError) }
+    }
+
+    func testFolderMergeWithoutRereadingKnownFiles() {
+        let a = Track(url: URL(fileURLWithPath: "/music/a.mp3"), duration: 1)
+        let b = Track(url: URL(fileURLWithPath: "/music/b.mp3"), duration: 2)
+        var folder = MusicFolder(url: URL(fileURLWithPath: "/music"), tracks: [b, a])
+        let c = Track(url: URL(fileURLWithPath: "/music/c.mp3"), duration: 3)
+        // b исчез с диска, a известен, c новый; повторное чтение a не нужно.
+        folder.merge(files: [a.url, c.url], added: [c])
+        XCTAssertEqual(folder.tracks, [a, c])
+        // Запись для файла, которого нет в списке, не добавляется; дубликаты отбрасываются.
+        folder.merge(files: [a.url, c.url], added: [Track(url: c.url, duration: 3), b])
+        XCTAssertEqual(folder.tracks, [a, c])
+    }
+
     func testTimeLabels() {
         XCTAssertEqual(timeLabel(84), "1:24")
         XCTAssertEqual(timeLabel(-10), "0:00")

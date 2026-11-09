@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-and-test:
-    name: Intel · build and core tests
+    name: Intel runner · universal build and tests
     runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
@@ -31,5 +31,18 @@ jobs:
         run: swift test
       - name: Build local app
         run: zsh scripts/build-app.sh
-      - name: Verify signature
-        run: codesign --verify --strict --verbose=2 dist/VibeWave.app
+      - name: Verify signature and architectures
+        run: |
+          codesign --verify --strict --verbose=2 dist/VibeWave.app
+          lipo dist/VibeWave.app/Contents/MacOS/VibeWave -verify_arch arm64 x86_64
+      # Интеграционные проверки модели, импорта MP3/FLAC, папок, drag and drop и окна.
+      # Используют временную библиотеку и фикстуры из Checks/Fixtures.
+      # У раннера нет видеокарты: окно SwiftUI не может отрисоваться через Metal,
+      # поэтому проверки окна выполняются только локально.
+      - name: Regression checks
+        env:
+          VIBEWAVE_SKIP_WINDOW_CHECKS: "1"
+        run: zsh scripts/check.sh
+      # Проверяет, что DMG, PKG и ZIP собираются; артефакты никуда не публикуются.
+      - name: Package installers
+        run: zsh scripts/package-release.sh "$RUNNER_TEMP/release"

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 /// Окно плеера в стиле Windows 95: панель плеера сверху, плейлист снизу,
 /// библиотека (плейлисты и папки) открывается кнопкой «Библиотека».
+@MainActor
 struct ContentView: View {
     @ObservedObject var model: PlayerModel
     @State private var naming = false
@@ -126,17 +127,29 @@ struct ContentView: View {
                 Button { model.chooseFolder() } label: { Text("+ Папка") }
                     .disabled(model.importing).help("Добавить папку с музыкой")
                 Button { showLibrary.toggle() } label: { Text("Библиотека") }
-                    .buttonStyle(RetroButtonStyle(theme: theme, compact: true, isOn: showLibrary))
+                    .buttonStyle(RetroButtonStyle(theme: theme, isOn: showLibrary, toolbar: true))
                     .help("Показать или скрыть плейлисты и папки")
                 viewMenu
                 Spacer(minLength: 4)
-                Text("\(model.visibleTracks.count) · \(timeLabel(model.visibleTracks.reduce(0) { $0 + $1.duration }))")
-                    .font(.custom("Arial", size: 11)).lineLimit(1)
-                    .padding(.horizontal, 6).frame(height: 19)
-                    .background(theme.background).retroBevel(theme, sunken: true)
-                    .help("Треков и общее время")
+                if let progress = model.importProgress {
+                    // Во время импорта вместо счётчика — ход работы и отмена.
+                    Text(progress.label)
+                        .font(.custom("Arial", size: 12)).lineLimit(1).truncationMode(.middle)
+                        .padding(.horizontal, 6).frame(height: 24)
+                        .background(theme.background).retroBevel(theme, sunken: true)
+                        .help(progress.label)
+                        .accessibilityLabel(progress.label)
+                    Button { model.cancelImport() } label: { Text("Отмена") }
+                        .help("Остановить добавление; библиотека не изменится")
+                } else {
+                    Text("\(model.visibleTracks.count) · \(timeLabel(model.visibleTracks.reduce(0) { $0 + $1.duration }))")
+                        .font(.custom("Arial", size: 12)).lineLimit(1)
+                        .padding(.horizontal, 6).frame(height: 24)
+                        .background(theme.background).retroBevel(theme, sunken: true)
+                        .help("Треков и общее время")
+                }
             }
-            .buttonStyle(RetroButtonStyle(theme: theme, compact: true))
+            .buttonStyle(RetroButtonStyle(theme: theme, toolbar: true))
         }
         .padding(5)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -144,26 +157,23 @@ struct ContentView: View {
     }
 
     private var viewMenu: some View {
-        Menu {
-            Button { model.groupByPlaylists = false } label: {
-                if !model.groupByPlaylists { Label("Общий список", systemImage: "checkmark") } else { Text("Общий список") }
+        RetroMenuButton(title: "Вид ▾") {
+            var items: [RetroMenuButton.Item] = [
+                .action("Общий список", checked: !model.groupByPlaylists) { model.groupByPlaylists = false },
+                .action("По плейлистам", checked: model.groupByPlaylists) { model.groupByPlaylists = true },
+                .separator,
+                .action("Вся музыка", checked: model.isLibrarySelected) { model.selectedID = nil }
+            ]
+            if !model.playlists.isEmpty || !model.folders.isEmpty { items.append(.separator) }
+            items += model.playlists.map { playlist in
+                .action(playlist.name, checked: model.selectedID == playlist.id) { model.selectedID = playlist.id }
             }
-            Button { model.groupByPlaylists = true } label: {
-                if model.groupByPlaylists { Label("По плейлистам", systemImage: "checkmark") } else { Text("По плейлистам") }
+            items += model.folders.map { folder in
+                .action("📁 " + folder.name, checked: model.selectedID == folder.id) { model.selectedID = folder.id }
             }
-            Divider()
-            Button("Вся музыка") { model.selectedID = nil }
-            if !model.playlists.isEmpty || !model.folders.isEmpty { Divider() }
-            ForEach(model.playlists) { playlist in Button(playlist.name) { model.selectedID = playlist.id } }
-            ForEach(model.folders) { folder in Button("📁 " + folder.name) { model.selectedID = folder.id } }
-            Divider()
-            Button("Новый плейлист…") { renameID = nil; name = ""; naming = true }
-        } label: {
-            Text("Вид ▾").font(.custom("Arial", size: 11))
+            items += [.separator, .action("Новый плейлист…") { renameID = nil; name = ""; naming = true }]
+            return items
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        .padding(.horizontal, 7).frame(height: 21)
-        .background(theme.panel).retroBevel(theme)
         .help("Вид списка и раздел")
     }
 

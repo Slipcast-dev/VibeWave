@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Две пары светлых/тёмных граней создают классическую объёмную рамку.
@@ -49,15 +50,21 @@ struct RetroButtonStyle: ButtonStyle {
     var width: CGFloat? = nil
     /// Включённый переключатель рисуется вдавленным.
     var isOn = false
+    /// Кнопка нижней панели: крупнее компактной, но ниже обычной.
+    var toolbar = false
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         let sunken = configuration.isPressed || isOn
         configuration.label
-            .font(.custom("Arial", size: compact ? 11 : 12))
+            .font(.custom("Arial", size: compact && !toolbar ? 11 : 12))
+            .lineLimit(1)
+            // Текст не сжимается и не обрезается: кнопка растёт по его ширине.
+            .fixedSize()
             .foregroundColor(enabled ? theme.foreground : theme.secondary.opacity(0.6))
             .offset(x: sunken ? 1 : 0, y: sunken ? 1 : 0)
             .frame(width: width)
-            .padding(.horizontal, width == nil ? (compact ? 7 : 10) : 0).padding(.vertical, compact ? 4 : 7)
+            .padding(.horizontal, width == nil ? (toolbar ? 10 : compact ? 7 : 10) : 0)
+            .padding(.vertical, toolbar ? 5 : compact ? 4 : 7)
             .background(isOn ? Color(white: 0.85) : theme.panel)
             .retroBevel(theme, sunken: sunken)
             .contentShape(Rectangle())
@@ -117,4 +124,66 @@ struct RetroSlider: View {
         let step = (range.upperBound - range.lowerBound) / 100
         value = min(range.upperBound, max(range.lowerBound, value + direction * step))
     }
+}
+
+/// Кнопка в общем ретро-стиле, открывающая нативное меню под собой.
+/// SwiftUI Menu на macOS рисует собственную кнопку и не принимает ButtonStyle.
+struct RetroMenuButton: View {
+    enum Item {
+        case action(String, checked: Bool = false, () -> Void)
+        case separator
+    }
+
+    let title: String
+    let items: () -> [Item]
+    @State private var anchor = MenuAnchor()
+
+    var body: some View {
+        Button { anchor.popUp(items()) } label: { Text(title) }
+            .background(MenuAnchorView(anchor: anchor))
+    }
+}
+
+@MainActor
+final class MenuAnchor {
+    weak var view: NSView?
+
+    func popUp(_ items: [RetroMenuButton.Item]) {
+        guard let view = view else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for item in items {
+            switch item {
+            case .separator: menu.addItem(.separator())
+            case let .action(title, checked, handler): menu.addItem(ClosureMenuItem(title, checked: checked, handler: handler))
+            }
+        }
+        // Верхний левый угол меню — под нижним краем кнопки.
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.isFlipped ? view.bounds.height + 2 : -2), in: view)
+    }
+}
+
+private struct MenuAnchorView: NSViewRepresentable {
+    let anchor: MenuAnchor
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+    func updateNSView(_ view: NSView, context: Context) { anchor.view = view }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, checked: Bool, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+        state = checked ? .on : .off
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) не используется") }
+
+    @objc private func run() { handler() }
 }

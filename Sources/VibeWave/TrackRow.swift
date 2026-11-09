@@ -4,6 +4,7 @@ import VibeWaveCore
 /// Строка плейлиста: «N. Название» слева, время справа. Перетаскивается вся строка
 /// (перед другим треком или в конец); контекстное меню — действия с источником.
 /// sourceID — откуда трек (для действий), dropTargetID — куда падают перетаскивания.
+@MainActor
 struct TrackRow: View {
     @ObservedObject var model: PlayerModel
     let track: Track
@@ -49,6 +50,7 @@ struct TrackRow: View {
 }
 
 /// Один набор действий для всех списков; «Выше/Ниже» работают в том порядке, который виден.
+@MainActor
 struct TrackContextMenu: View {
     @ObservedObject var model: PlayerModel
     let track: Track
@@ -90,6 +92,7 @@ struct TrackContextMenu: View {
 
 /// Пункт единого сайдбара: «Вся музыка», плейлист или папка.
 /// Обработчик drop установлен на самой кнопке, чтобы сохранялись обычные клики.
+@MainActor
 struct SidebarRow<Menu: View>: View {
     @ObservedObject var model: PlayerModel
     let id: UUID?

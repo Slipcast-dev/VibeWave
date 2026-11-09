@@ -5,6 +5,7 @@ import VibeWaveCore
 
 /// Запускается без XCTest и проверяет реальную модель на временной библиотеке.
 @main
+@MainActor
 struct RegressionChecks {
     static func main() throws {
         _ = NSApplication.shared
@@ -200,6 +201,47 @@ struct RegressionChecks {
         libraryModel.error = nil
         libraryModel.removeFolder(folder.id)
         precondition(libraryModel.folders.isEmpty && libraryModel.libraryEntries.count == 1)
+
+        // В папку попадают только обычные файлы: каталог «Album.mp3» и скрытые файлы пропускаются.
+        let mixed = support.appendingPathComponent("Mixed", isDirectory: true)
+        let album = mixed.appendingPathComponent("Album.mp3", isDirectory: true)
+        try FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: audioURLs[0], to: album.appendingPathComponent("inner.flac"))
+        try FileManager.default.copyItem(at: audioURLs[1], to: mixed.appendingPathComponent("Track 2.mp3"))
+        try FileManager.default.copyItem(at: audioURLs[1], to: mixed.appendingPathComponent(".hidden.mp3"))
+        libraryModel.addFolders([mixed])
+        precondition(libraryModel.importing && libraryModel.importProgress != nil, "Прогресс виден во время сканирования")
+        waitFor { !libraryModel.importing }
+        precondition(libraryModel.importProgress == nil, "Прогресс скрывается после завершения")
+        precondition(libraryModel.error == nil, libraryModel.error ?? "Каталог с расширением .mp3 не должен давать ошибку")
+        let mixedFolder = libraryModel.folders.first { $0.url.standardizedFileURL == mixed.standardizedFileURL }!
+        precondition(Set(mixedFolder.tracks.map(\.url.lastPathComponent)) == ["inner.flac", "Track 2.mp3"], "Только обычные видимые файлы")
+
+        // Обновление сохраняет ID известных треков и дочитывает только новые файлы.
+        let knownIDs = mixedFolder.tracks.map(\.id)
+        try FileManager.default.copyItem(at: audioURLs[1], to: mixed.appendingPathComponent("Track 10.mp3"))
+        libraryModel.rescanFolder(mixedFolder.id)
+        waitFor { !libraryModel.importing }
+        let rescanned = libraryModel.folders.first { $0.id == mixedFolder.id }!
+        precondition(libraryModel.error == nil && rescanned.tracks.count == 3, libraryModel.error ?? "Новый файл не добавлен")
+        precondition(Array(rescanned.tracks.map(\.id).prefix(2)) == knownIDs && rescanned.tracks.last?.url.lastPathComponent == "Track 10.mp3",
+                     "Известные треки сохраняют ID и порядок")
+
+        // Отмена сразу разблокирует интерфейс и не меняет библиотеку.
+        let foldersBeforeCancel = libraryModel.folders
+        libraryModel.addFolders([fixtures])
+        precondition(libraryModel.importing)
+        libraryModel.cancelImport()
+        precondition(!libraryModel.importing && libraryModel.importProgress == nil, "Отмена снимает блокировку")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        precondition(libraryModel.folders == foldersBeforeCancel && libraryModel.error == nil, "Отменённая задача не меняет библиотеку")
+        let queueBeforeCancel = libraryModel.openTracks
+        libraryModel.importURLs(audioURLs, into: nil)
+        libraryModel.cancelImport()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        precondition(libraryModel.openTracks == queueBeforeCancel, "Отменённый импорт файлов не добавляет треки")
+        libraryModel.removeFolder(mixedFolder.id)
+        print("PASS: regular-file filter, incremental rescan, import progress and cancellation")
         print("PASS: folders, unified library list, manual library order, grouping, persistence")
         if CommandLine.arguments.count > 2 {
             let bundle = Bundle(path: CommandLine.arguments[2])!
@@ -207,26 +249,32 @@ struct RegressionChecks {
             let icon = NSImage(contentsOf: iconURL)
             precondition(icon?.isValid == true, "Иконка должна читаться AppKit")
         }
-        // Проверяем новое borderless-окно и реальные контролы заголовка вне пользовательского окна.
-        let controller = RetroWindowController(model: dropModel)
-        let window = controller.window!
-        precondition(!window.styleMask.contains(.titled), "Полоса macOS должна отсутствовать")
-        precondition(window.canBecomeKey && window.canBecomeMain, "Клавиатура должна работать")
-        window.contentView?.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        let caption = findCaption(in: window.contentView!)!
-        let buttons = caption.subviews.compactMap { $0 as? RetroCaptionButton }
-        precondition(buttons.count == 3 && buttons.allSatisfy { $0.target != nil && $0.action != nil })
-        precondition(Set(buttons.compactMap(\.toolTip)) == Set(["Свернуть", "Развернуть или восстановить", "Закрыть окно"]))
-        if let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
-            let original = window.frame
-            window.zoom(nil)
-            waitFor { window.frame == visible }
-            window.zoom(nil)
-            waitFor { window.frame == original }
+        // Окно рисует SwiftUI через Metal; на виртуальных машинах без видеокарты (GitHub Actions)
+        // это падает в системной библиотеке, поэтому там проверки окна отключаются явно.
+        if ProcessInfo.processInfo.environment["VIBEWAVE_SKIP_WINDOW_CHECKS"] == "1" {
+            print("SKIP: window checks (VIBEWAVE_SKIP_WINDOW_CHECKS=1, no GPU)")
+        } else {
+            // Проверяем новое borderless-окно и реальные контролы заголовка вне пользовательского окна.
+            let controller = RetroWindowController(model: dropModel)
+            let window = controller.window!
+            precondition(!window.styleMask.contains(.titled), "Полоса macOS должна отсутствовать")
+            precondition(window.canBecomeKey && window.canBecomeMain, "Клавиатура должна работать")
+            window.contentView?.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            let caption = findCaption(in: window.contentView!)!
+            let buttons = caption.subviews.compactMap { $0 as? RetroCaptionButton }
+            precondition(buttons.count == 3 && buttons.allSatisfy { $0.target != nil && $0.action != nil })
+            precondition(Set(buttons.compactMap(\.toolTip)) == Set(["Свернуть", "Развернуть или восстановить", "Закрыть окно"]))
+            if let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+                let original = window.frame
+                window.zoom(nil)
+                waitFor { window.frame == visible }
+                window.zoom(nil)
+                waitFor { window.frame == original }
+            }
+            window.close()
+            print("PASS: borderless key window, three connected caption buttons, maximize/restore")
         }
-        window.close()
-        print("PASS: borderless key window, three connected caption buttons, maximize/restore")
         print("PASS: real MP3/FLAC import and valid app icon")
         print("PASS: migration, reorder up/down/end, cross-playlist move, duplicates, persistence, payload, formats")
     }

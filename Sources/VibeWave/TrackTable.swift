@@ -3,6 +3,7 @@ import VibeWaveCore
 
 /// Список плейлиста: выбранный плейлист/папка или раздел «Вся музыка»
 /// (общий список с ручным порядком либо разделы по плейлистам).
+@MainActor
 struct TrackTable: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
@@ -79,6 +80,7 @@ struct TrackTable: View {
 }
 
 /// Заголовок раздела в режиме «По плейлистам»; в него можно бросить трек (кроме папок).
+@MainActor
 private struct SectionHeader: View {
     @ObservedObject var model: PlayerModel
     let section: LibrarySection

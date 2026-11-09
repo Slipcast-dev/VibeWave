@@ -4,7 +4,7 @@ import AppKit
 /// интерфейс внутри окна остаётся SwiftUI.
 @main
 struct VibeWaveApp {
-    static func main() {
+    @MainActor static func main() {
         let application = NSApplication.shared
         let delegate = VibeWaveAppDelegate()
         application.delegate = delegate
@@ -13,6 +13,7 @@ struct VibeWaveApp {
     }
 }
 
+@MainActor
 final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let model = PlayerModel()
     private var playerWindow: RetroWindowController?

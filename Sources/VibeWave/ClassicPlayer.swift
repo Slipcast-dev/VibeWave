@@ -5,6 +5,7 @@ import VibeWaveCore
 /// Панель плеера в стиле Windows 95: табло со временем и индикатором уровня,
 /// поле с бегущей строкой, сведения о файле, громкость, баланс, позиция
 /// и кнопки управления. Работает поверх PlayerModel.
+@MainActor
 struct ClassicPlayerPanel: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
@@ -89,10 +90,13 @@ struct ClassicPlayerPanel: View {
             Text("kbps")
             field(model.currentSampleRate > 0 ? "\(Int((model.currentSampleRate / 1000).rounded()))" : "", width: 26)
             Text("kHz")
-            Spacer(minLength: 4)
+            Spacer(minLength: 2)
             Text("моно").foregroundColor(model.currentChannels == 1 ? theme.foreground : theme.shadow)
             Text("стерео").foregroundColor(model.currentChannels >= 2 ? theme.foreground : theme.shadow)
         }
+        // Подписи не переносятся и не обрезаются в узком окне.
+        .lineLimit(1)
+        .fixedSize()
         .font(.custom("Arial", size: 10).weight(.bold))
         .foregroundColor(theme.foreground)
     }
@@ -159,6 +163,7 @@ private struct Marquee: View {
 /// Индикатор: высота столбиков следует реальной громкости левого/правого канала,
 /// форма меняется во времени. Столбики собраны из тёмно-синих блоков,
 /// как полоса прогресса Windows 95. Без воспроизведения столбики гаснут.
+@MainActor
 private struct SpectrumView: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
