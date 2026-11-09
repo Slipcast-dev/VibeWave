@@ -83,7 +83,7 @@ struct ClassicPlayerPanel: View {
 
     private var marqueeText: String {
         guard let track = model.current else { return s.idleMarquee }
-        let number = model.visibleTracks.firstIndex(where: { $0.id == track.id }).map { "\($0 + 1). " } ?? ""
+        let number = model.displayedTracks.firstIndex(where: { $0.id == track.id }).map { "\($0 + 1). " } ?? ""
         return "\(number)\(track.title) (\(timeLabel(track.duration)))"
     }
 
@@ -111,6 +111,12 @@ struct ClassicPlayerPanel: View {
 
     // MARK: Кнопки
 
+    private var nextTrackHelp: String {
+        if let next = model.nextTrack { return s.nextTrack(next.title) }
+        if model.shuffleEnabled && model.repeatMode == .queue && !model.queue.isEmpty { return s.nextShuffledCycle }
+        return s.endOfQueue
+    }
+
     private var controls: some View {
         HStack(spacing: 2) {
             Button { model.previous() } label: { Image(systemName: "backward.end.fill") }
@@ -119,14 +125,34 @@ struct ClassicPlayerPanel: View {
                 if model.current == nil || !model.playing { model.toggle() }
             } label: { Image(systemName: "play.fill") }
                 .help(s.play)
-                .disabled(model.current == nil && model.visibleTracks.isEmpty)
+                .disabled(model.current == nil && model.displayedTracks.isEmpty)
             Button { if model.playing { model.toggle() } } label: { Image(systemName: "pause.fill") }
                 .disabled(!model.playing).help(s.pause)
             Button { model.stop() } label: { Image(systemName: "stop.fill") }
                 .disabled(model.current == nil).help(s.stop)
             Button { model.next() } label: { Image(systemName: "forward.end.fill") }
-                .disabled(model.current == nil).help(model.nextTrack.map { s.nextTrack($0.title) } ?? s.endOfQueue)
+                .disabled(model.current == nil).help(nextTrackHelp)
             Spacer(minLength: 0)
+            Button { model.shuffleEnabled.toggle() } label: {
+                Image(systemName: "shuffle")
+            }
+            .buttonStyle(RetroButtonStyle(theme: theme, compact: true, width: 30, isOn: model.shuffleEnabled))
+            .help(s.shuffle)
+            .accessibilityLabel(s.shuffle)
+            .accessibilityValue(model.shuffleEnabled ? s.on : s.off)
+            Button {
+                switch model.repeatMode {
+                case .off: model.repeatMode = .queue
+                case .queue: model.repeatMode = .track
+                case .track: model.repeatMode = .off
+                }
+            } label: {
+                Image(systemName: model.repeatMode == .track ? "repeat.1" : "repeat")
+            }
+            .buttonStyle(RetroButtonStyle(theme: theme, compact: true, width: 30, isOn: model.repeatMode != .off))
+            .help("\(s.repeatLabel) — \(s.repeatModeName(model.repeatMode))")
+            .accessibilityLabel(s.repeatLabel)
+            .accessibilityValue(s.repeatModeName(model.repeatMode))
             // Эквалайзер у правого края; надпись синяя, когда он включён.
             Button { showEqualizer.toggle() } label: {
                 Text("EQ").font(.custom("Arial", size: 11).weight(.bold))

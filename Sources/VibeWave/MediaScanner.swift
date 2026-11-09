@@ -130,7 +130,11 @@ enum MediaScanner {
             // В локальной сборке без App Sandbox app-scope key может отсутствовать:
             // необязательная закладка не должна отклонять исправную музыку.
             let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-            return .success(Track(url: url, duration: rate > 0 ? Double(audio.length) / rate : 0, bookmark: bookmark))
+            var track = Track(url: url, duration: rate > 0 ? Double(audio.length) / rate : 0, bookmark: bookmark)
+            if let title = try? AudioMetadataFile.read(url, includeArtwork: false).fields[.title], !title.isEmpty {
+                track.title = title
+            }
+            return .success(track)
         } catch { return .failure(error) }
     }
 

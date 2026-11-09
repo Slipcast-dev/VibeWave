@@ -3,7 +3,7 @@ import Foundation
 import VibeWaveCore
 
 /// Строка общего списка: трек и источник, к которому относятся действия с ним.
-struct LibraryEntry: Identifiable {
+struct LibraryEntry: Identifiable, Sendable {
     let track: Track
     let sourceID: UUID?
     var id: UUID { track.id }
@@ -23,6 +23,7 @@ struct LibrarySection: Identifiable {
 enum PlaybackSource: Equatable {
     case container(UUID?)
     case library
+    case snapshot
 }
 
 /// Состояние плеера и библиотеки для SwiftUI. Всё состояние живёт на главном потоке,
@@ -35,22 +36,72 @@ enum PlaybackSource: Equatable {
 /// - `PlayerModel+Playback.swift` — очередь воспроизведения и управление `AudioEngine`.
 @MainActor
 final class PlayerModel: NSObject, ObservableObject {
-    @Published var playlists: [Playlist] = []
-    @Published var folders: [MusicFolder] = []
+    @Published var playlists: [Playlist] = [] { didSet { scheduleQueries() } }
+    @Published var folders: [MusicFolder] = [] { didSet { scheduleQueries() } }
     /// Ручной порядок раздела «Вся музыка» без группировки.
-    @Published var libraryOrder: [UUID] = []
+    @Published var libraryOrder: [UUID] = [] { didSet { scheduleQueries() } }
     /// Группировка общего списка по плейлистам и папкам; влияет и на очередь.
     @Published var groupByPlaylists = UserDefaults.standard.bool(forKey: "library.grouped") {
         didSet {
             UserDefaults.standard.set(groupByPlaylists, forKey: "library.grouped")
             if playbackSource == .library { refreshPlaybackQueue() }
+            scheduleQueries()
         }
     }
     /// nil — раздел «Вся музыка»; иначе ID плейлиста или папки.
-    @Published var selectedID: UUID?
-    @Published var openTracks: [Track] = []
+    @Published var selectedID: UUID? { didSet { scheduleQueries() } }
+    @Published var openTracks: [Track] = [] { didSet { scheduleQueries() } }
+    @Published var smartPlaylists: [SmartPlaylist] = [] { didSet { scheduleQueries() } }
+    @Published var searchText = "" { didSet { scheduleQueries() } }
+    @Published var searchScope: SearchScope { didSet { scheduleQueries() } }
+    @Published var searchFilter = LibraryQuery() { didSet { scheduleQueries() } }
+    @Published var queryReady = false
+    @Published var queryResults: [QueryRecord] = []
+    @Published var smartCounts: [UUID: Int] = [:]
+    @Published var searchOptions: SearchOptions {
+        didSet {
+            if let data = try? JSONEncoder().encode(searchOptions) { playbackDefaults.set(data, forKey: "search.options") }
+            scheduleQueries()
+        }
+    }
+    var queryTask: Task<Void, Never>?
+    var queryTags: [URL: [AudioTagField: String]] = [:]
     @Published var current: Track?
     @Published var playing = false
+    @Published var shuffleEnabled: Bool {
+        didSet {
+            guard shuffleEnabled != oldValue else { return }
+            playbackDefaults.set(shuffleEnabled, forKey: "playback.shuffle")
+            if shuffleEnabled, let current = current {
+                shuffleOrder.reset(queue.map(\.id), startingAt: current.id)
+            } else {
+                shuffleOrder = ShuffleOrder()
+            }
+        }
+    }
+    @Published var playlistFileOptions: PlaylistFileOptions {
+        didSet {
+            if let data = try? JSONEncoder().encode(playlistFileOptions) {
+                playbackDefaults.set(data, forKey: "playlist.fileOptions")
+            }
+        }
+    }
+    @Published var listeningOptions: ListeningOptions {
+        didSet {
+            if let data = try? JSONEncoder().encode(listeningOptions) {
+                playbackDefaults.set(data, forKey: "listening.options")
+            }
+            if oldValue.enabled != listeningOptions.enabled {
+                listeningSession.suspend()
+                if playing { resumeListening(at: engine.currentTime) }
+            }
+            if oldValue.retentionDays != listeningOptions.retentionDays { pruneListeningHistory() }
+        }
+    }
+    @Published private(set) var listeningActivity = ListeningActivity() { didSet { scheduleQueries() } }
+    @Published var repeatMode: RepeatMode {
+        didSet { playbackDefaults.set(repeatMode.rawValue, forKey: "playback.repeat") }
+    }
     @Published var position: Double = 0
     @Published var duration: Double = 0
     @Published var volume: Double = 0.75 {
@@ -73,6 +124,8 @@ final class PlayerModel: NSObject, ObservableObject {
     @Published var currentSampleRate = 0.0
     @Published var currentChannels = 0
     @Published var error: String?
+    @Published var tagEditorRequest: TagEditorRequest?
+    @Published var writingTags = false
     /// Идёт фоновое добавление или сканирование; одновременно выполняется одна задача.
     @Published var importing = false
     @Published var importProgress: ImportProgress?
@@ -81,6 +134,11 @@ final class PlayerModel: NSObject, ObservableObject {
     var importJob: ImportJob?
     var timer: AnyCancellable?
     var queue: [Track] = []
+    var shuffleOrder = ShuffleOrder()
+    private let playbackDefaults: UserDefaults
+    private let listeningStore: ListeningActivityStore
+    private var listeningStoreReadable = true
+    var listeningSession = ListeningSession()
     var playbackSource: PlaybackSource = .container(nil)
     var librarySectionStart: String?
     private let store: LibraryStore
@@ -92,14 +150,30 @@ final class PlayerModel: NSObject, ObservableObject {
     }
 
     /// Отдельный каталог позволяет проверять переносы и миграцию, не трогая библиотеку пользователя.
-    init(supportDirectory support: URL) {
+    init(supportDirectory support: URL, playbackDefaults: UserDefaults = .standard) {
+        self.playbackDefaults = playbackDefaults
+        let search = playbackDefaults.data(forKey: "search.options")
+            .flatMap { try? JSONDecoder().decode(SearchOptions.self, from: $0) } ?? SearchOptions()
+        searchOptions = search
+        searchScope = search.scope
+        playlistFileOptions = playbackDefaults.data(forKey: "playlist.fileOptions")
+            .flatMap { try? JSONDecoder().decode(PlaylistFileOptions.self, from: $0) } ?? PlaylistFileOptions()
+        var history = playbackDefaults.data(forKey: "listening.options")
+            .flatMap { try? JSONDecoder().decode(ListeningOptions.self, from: $0) } ?? ListeningOptions()
+        history.thresholdSeconds = min(300, max(1, history.thresholdSeconds))
+        if ![0, 7, 30, 90, 365].contains(history.retentionDays) { history.retentionDays = 90 }
+        listeningOptions = history
+        listeningStore = ListeningActivityStore(url: support.appendingPathComponent("VibeWave/listening.json"))
+        shuffleEnabled = playbackDefaults.bool(forKey: "playback.shuffle")
+        repeatMode = playbackDefaults.string(forKey: "playback.repeat").flatMap(RepeatMode.init(rawValue:)) ?? .off
         store = LibraryStore(url: support.appendingPathComponent("VibeWave/library.json"))
         engine = AudioEngine()
         super.init()
         engine.volume = Float(volume)
         engine.equalizer = equalizer
-        engine.onFinish = { [weak self] in self?.next() }
+        engine.onFinish = { [weak self] in self?.trackFinished() }
         engine.onFailure = { [weak self] _ in self?.playbackLost() }
+        engine.onRecovered = { [weak self] position in self?.resumeListening(at: position) }
         do {
             // При первом запуске нового имени читаем прежнюю библиотеку без её удаления.
             if !FileManager.default.fileExists(atPath: store.url.path) {
@@ -111,11 +185,33 @@ final class PlayerModel: NSObject, ObservableObject {
                 playlists = snapshot.playlists
                 folders = snapshot.folders
                 libraryOrder = snapshot.order
+                smartPlaylists = snapshot.smartPlaylists
             }
             selectedID = nil
         } catch {
             canSave = false
             self.error = strings.errorLibraryRead(error.localizedDescription)
+        }
+        do {
+            listeningActivity = try listeningStore.load()
+            pruneListeningHistory()
+        } catch {
+            listeningStoreReadable = false
+            self.error = "\(strings.listeningHistory)\n\(error.localizedDescription)"
+        }
+    }
+
+    func saveListeningActivity(_ activity: ListeningActivity) {
+        guard activity != listeningActivity else { return }
+        guard listeningStoreReadable else {
+            error = strings.listeningReadOnly
+            return
+        }
+        do {
+            try listeningStore.save(activity)
+            listeningActivity = activity
+        } catch {
+            self.error = "\(strings.listeningHistory)\n\(error.localizedDescription)"
         }
     }
 
@@ -123,7 +219,7 @@ final class PlayerModel: NSObject, ObservableObject {
         guard canSave else { return }
         // Временные треки вне плейлистов не сохраняются, поэтому их нет и в порядке.
         let persistent = Set(playlists.flatMap(\.tracks).map(\.id) + folders.flatMap(\.tracks).map(\.id))
-        do { try store.save(LibrarySnapshot(playlists: playlists, folders: folders, order: libraryOrder.filter(persistent.contains))) }
+        do { try store.save(LibrarySnapshot(playlists: playlists, folders: folders, order: libraryOrder.filter(persistent.contains), smartPlaylists: smartPlaylists)) }
         catch { self.error = strings.errorLibrarySave(error.localizedDescription) }
     }
 
@@ -140,11 +236,12 @@ final class PlayerModel: NSObject, ObservableObject {
 
     var selected: Playlist? { playlists.first { $0.id == selectedID } }
     var selectedFolder: MusicFolder? { folders.first { $0.id == selectedID } }
-    var isLibrarySelected: Bool { selectedID == nil || (selected == nil && selectedFolder == nil) }
-    var selectedTitle: String { selected?.name ?? selectedFolder?.name ?? strings.allMusic }
+    var isLibrarySelected: Bool { selectedID == nil || (selected == nil && selectedFolder == nil && selectedSmart == nil) }
+    var selectedTitle: String { selected?.name ?? selectedFolder?.name ?? selectedSmart?.name ?? strings.allMusic }
     var visibleTracks: [Track] {
         if let playlist = selected { return playlist.tracks }
         if let folder = selectedFolder { return folder.tracks }
+        if selectedSmart != nil { return [] }
         return libraryQueueTracks
     }
 

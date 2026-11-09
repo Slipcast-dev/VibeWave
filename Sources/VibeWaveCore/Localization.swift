@@ -48,12 +48,97 @@ public struct Strings: Sendable {
     public let menuQuit: String
     public let menuFile: String
     public let menuAddFiles: String
+    public let importPlaylistFile: String
+    public let exportPlaylistFile: String
+    public let playlistExportFormat: String
+    public let playlistExportEncoding: String
+    public let playlistLegacyEncoding: String
+    public let playlistEncodingHelp: String
+    public let playlistRelativePaths: String
+    public let playlistReportMissing: String
+    public let playlistReset: String
+    public let invalidPlaylistFile: String
+    public let invalidPlaylistEncoding: String
+    public let unsupportedPlaylistStream: String
+    public let playlistFileTooLarge: String
+    public let unsupportedPlaylistPath: String
+    public let lossyPlaylistEncoding: String
+    public let missingPlaylistFile: String
+    public let trackInfo: String
+    public let batchTags: String
+    public let trackArtwork: String
+    public let chooseArtwork: String
+    public let removeArtwork: String
+    public let mixedTags: String
+    public let tagEditHelp: String
+    public let stopTagWrite: String
+    public let artworkInvalid: String
+    public let tagsUnsupported: String
+    public let tagsDamaged: String
+    public let tagsTooLarge: String
+    public let tagsChanged: String
+    public let tagsReadOnly: String
+    public let trackRating: String
+    public let noRating: String
+    public let listeningHistory: String
+    public let listeningEnabled: String
+    public let listeningRetention: String
+    public let listeningForever: String
+    public let listeningEmpty: String
+    public let listeningClear: String
+    public let listeningClearHelp: String
+    public let listeningReadOnly: String
+    public let listeningThresholdHelp: String
+    public let tagsUnreadableCount: @Sendable (Int) -> String
+    public let tagsSavedCount: @Sendable (Int) -> String
+    public let ratingStars: @Sendable (Int) -> String
+    public let listeningThreshold: @Sendable (Int) -> String
+    public let listeningDays: @Sendable (Int) -> String
+    public let listenCount: @Sendable (Int) -> String
+    public let tagFieldName: @Sendable (AudioTagField) -> String
+    public let invalidTagField: @Sendable (String) -> String
+    public let smartPlaylists: String
+    public let createSmartPlaylist: String
+    public let searchTracks: String
+    public let searchFilters: String
+    public let clearSearch: String
+    public let noQueryResults: String
+    public let queryScope: String
+    public let queryCurrentScope: String
+    public let queryMatch: String
+    public let queryMatchAll: String
+    public let queryMatchAny: String
+    public let queryField: String
+    public let queryOperator: String
+    public let queryValue: String
+    public let queryRemoveRule: String
+    public let queryAddRule: String
+    public let querySort: String
+    public let queryManualSort: String
+    public let queryDescending: String
+    public let queryLimit: String
+    public let queryUnits: String
+    public let queryPresets: String
+    public let queryEdit: String
+    public let queryFieldName: @Sendable (String) -> String
+    public let queryOperatorName: @Sendable (String) -> String
+    public let smartPresetName: @Sendable (String) -> String
     public let menuEdit: String
     public let menuUndo: String
     public let menuCut: String
     public let menuCopy: String
     public let menuPaste: String
     public let menuSelectAll: String
+    public let settingsTitle: String
+    public let menuSettings: String
+    public let menuPlayback: String
+    public let shuffle: String
+    public let repeatLabel: String
+    public let repeatModeName: @Sendable (RepeatMode) -> String
+    public let on: String
+    public let off: String
+    public let nextShuffledCycle: String
+    public let resetPlaybackSettings: String
     public let menuWindow: String
     public let minimize: String
     public let zoom: String
@@ -194,12 +279,154 @@ public struct Strings: Sendable {
         menuQuit: "Завершить VibeWave",
         menuFile: "Файл",
         menuAddFiles: "Добавить файлы…",
+        importPlaylistFile: "Импортировать плейлист…",
+        exportPlaylistFile: "Экспортировать плейлист…",
+        playlistExportFormat: "Формат экспорта",
+        playlistExportEncoding: "Кодировка экспорта M3U и PLS",
+        playlistLegacyEncoding: "Кодировка для старых списков",
+        playlistEncodingHelp: "M3U8 всегда использует UTF-8. Для старых M3U и PLS выбранная кодировка применяется, когда файл не читается как Unicode.",
+        playlistRelativePaths: "Относительные пути",
+        playlistReportMissing: "Сообщать о недоступных файлах",
+        playlistReset: "Сбросить настройки плейлистов",
+        invalidPlaylistFile: "Некорректный формат плейлиста.",
+        invalidPlaylistEncoding: "Не удалось прочитать кодировку плейлиста.",
+        unsupportedPlaylistStream: "Этот файл содержит поток HLS. Поддерживаются списки локальных треков.",
+        playlistFileTooLarge: "Плейлист превышает 8 МиБ.",
+        unsupportedPlaylistPath: "Поддерживаются только локальные пути без перевода строки.",
+        lossyPlaylistEncoding: "Выбранная кодировка не поддерживает все символы. Выберите UTF-8 в настройках или сохраните список как M3U8.",
+        missingPlaylistFile: "Файл отсутствует или недоступен.",
+        trackInfo: "Сведения о треке…",
+        batchTags: "Изменить теги плейлиста…",
+        trackArtwork: "Обложка",
+        chooseArtwork: "Выбрать обложку…",
+        removeArtwork: "Удалить обложки",
+        mixedTags: "Разные значения",
+        tagEditHelp: "Отметьте поля, которые хотите изменить. Пустое отмеченное поле удалит тег.",
+        stopTagWrite: "Остановить после файла",
+        artworkInvalid: "Выберите корректный файл JPEG или PNG размером до 12 МиБ.",
+        tagsUnsupported: "Структура тегов этого файла не поддерживается.",
+        tagsDamaged: "Структура тегов повреждена.",
+        tagsTooLarge: "Теги или обложка превышают допустимый размер.",
+        tagsChanged: "Файл изменился во время записи. Откройте редактор заново.",
+        tagsReadOnly: "Файл защищён от записи или имеет несколько жёстких ссылок.",
+        trackRating: "Оценка",
+        noRating: "Без оценки",
+        listeningHistory: "История",
+        listeningEnabled: "Вести историю прослушивания",
+        listeningRetention: "Хранить записи истории",
+        listeningForever: "Без ограничения",
+        listeningEmpty: "История пуста.",
+        listeningClear: "Очистить историю…",
+        listeningClearHelp: "Записи, счётчики и даты последних прослушиваний будут удалены. Оценки сохранятся.",
+        listeningReadOnly: "Не удалось прочитать файл истории. Для него отключена запись.",
+        listeningThresholdHelp: "Короткий трек засчитывается после прослушивания половины его длительности.",
+        tagsUnreadableCount: { "Файлов с недоступными тегами: \($0)" },
+        tagsSavedCount: { "Сохранено файлов: \($0)" },
+        ratingStars: { "Оценка: \($0) из 5" },
+        listeningThreshold: { "Засчитывать после \($0) сек." },
+        listeningDays: { "Дней: \($0)" },
+        listenCount: { "Прослушиваний: \($0)" },
+        tagFieldName: { field in
+            switch field {
+            case .title: return "Название"
+            case .artist: return "Исполнитель"
+            case .albumArtist: return "Исполнитель альбома"
+            case .album: return "Альбом"
+            case .genre: return "Жанр"
+            case .year: return "Год"
+            case .track: return "Номер трека"
+            case .disc: return "Номер диска"
+            case .comment: return "Комментарий"
+            }
+        },
+        invalidTagField: { "Недопустимое значение поля «\($0)». Для года укажите четыре цифры. Номер трека или диска можно указать в виде 2/10." },
+        smartPlaylists: "Умные списки",
+        createSmartPlaylist: "Новый умный список…",
+        searchTracks: "Поиск треков",
+        searchFilters: "Фильтры",
+        clearSearch: "Сбросить поиск и фильтры",
+        noQueryResults: "Треки не найдены",
+        queryScope: "Область поиска по умолчанию",
+        queryCurrentScope: "Текущий раздел",
+        queryMatch: "Условия",
+        queryMatchAll: "Все",
+        queryMatchAny: "Любое",
+        queryField: "Поле",
+        queryOperator: "Сравнение",
+        queryValue: "Значение",
+        queryRemoveRule: "Удалить условие",
+        queryAddRule: "Добавить условие",
+        querySort: "Сортировка",
+        queryManualSort: "Ручной порядок",
+        queryDescending: "По убыванию",
+        queryLimit: "Предел треков, 0 — без предела",
+        queryUnits: "Длительность в секундах. Относительные даты в днях.",
+        queryPresets: "Шаблоны",
+        queryEdit: "Изменить…",
+        queryFieldName: { key in
+            switch key {
+            case "title": return "Название"
+            case "artist": return "Исполнитель"
+            case "album": return "Альбом"
+            case "genre": return "Жанр"
+            case "filename": return "Имя файла"
+            case "path": return "Путь"
+            case "format": return "Формат"
+            case "year": return "Год"
+            case "rating": return "Оценка"
+            case "duration": return "Длительность"
+            case "added": return "Дата добавления"
+            case "lastPlayed": return "Последнее прослушивание"
+            case "plays": return "Прослушивания"
+            default: return key
+            }
+        },
+        queryOperatorName: { key in
+            switch key {
+            case "contains": return "Содержит"
+            case "equals": return "Равно"
+            case "notEquals": return "Не равно"
+            case "atLeast": return "Не меньше"
+            case "atMost": return "Не больше"
+            case "withinDays": return "За последние дни"
+            case "olderThanDays": return "Старше, дней"
+            case "exists": return "Указана"
+            case "missing": return "Не указана"
+            default: return key
+            }
+        },
+        smartPresetName: { key in
+            switch key {
+            case "recentAdded": return "Недавно добавленные"
+            case "recentPlayed": return "Недавно прослушанные"
+            case "frequent": return "Часто слушаю"
+            case "highlyRated": return "Высокая оценка"
+            case "unplayed": return "Ещё не слушал"
+            default: return key
+            }
+        },
         menuEdit: "Правка",
         menuUndo: "Отменить",
         menuCut: "Вырезать",
         menuCopy: "Копировать",
         menuPaste: "Вставить",
         menuSelectAll: "Выделить всё",
+        settingsTitle: "Настройки",
+        menuSettings: "Настройки…",
+        menuPlayback: "Воспроизведение",
+        shuffle: "Перемешивание",
+        repeatLabel: "Повтор",
+        repeatModeName: { mode in
+            switch mode {
+            case .off: return "Выключен"
+            case .queue: return "Вся очередь"
+            case .track: return "Текущий трек"
+            }
+        },
+        on: "Включено",
+        off: "Выключено",
+        nextShuffledCycle: "Следующий случайный цикл",
+        resetPlaybackSettings: "Сбросить настройки воспроизведения",
         menuWindow: "Окно",
         minimize: "Свернуть",
         zoom: "Развернуть или восстановить",
@@ -327,12 +554,154 @@ public struct Strings: Sendable {
         menuQuit: "Quit VibeWave",
         menuFile: "File",
         menuAddFiles: "Add Files…",
+        importPlaylistFile: "Import Playlist…",
+        exportPlaylistFile: "Export Playlist…",
+        playlistExportFormat: "Export Format",
+        playlistExportEncoding: "M3U and PLS Export Encoding",
+        playlistLegacyEncoding: "Legacy Playlist Encoding",
+        playlistEncodingHelp: "M3U8 always uses UTF-8. For older M3U and PLS files, the selected encoding is used when Unicode decoding fails.",
+        playlistRelativePaths: "Relative Paths",
+        playlistReportMissing: "Report Unavailable Files",
+        playlistReset: "Reset Playlist Settings",
+        invalidPlaylistFile: "Invalid playlist format.",
+        invalidPlaylistEncoding: "Could not decode the playlist.",
+        unsupportedPlaylistStream: "This file is an HLS stream. Local track lists are supported.",
+        playlistFileTooLarge: "The playlist exceeds 8 MiB.",
+        unsupportedPlaylistPath: "Only local paths without line breaks are supported.",
+        lossyPlaylistEncoding: "The selected encoding cannot represent all characters. Choose UTF-8 in Settings or save as M3U8.",
+        missingPlaylistFile: "File is missing or unavailable.",
+        trackInfo: "Track Info…",
+        batchTags: "Edit Playlist Tags…",
+        trackArtwork: "Artwork",
+        chooseArtwork: "Choose Artwork…",
+        removeArtwork: "Remove Artwork",
+        mixedTags: "Mixed Values",
+        tagEditHelp: "Check the fields you want to change. A checked empty field removes its tag.",
+        stopTagWrite: "Stop After This File",
+        artworkInvalid: "Choose a valid JPEG or PNG file up to 12 MiB.",
+        tagsUnsupported: "This file uses an unsupported tag layout.",
+        tagsDamaged: "The tag structure is damaged.",
+        tagsTooLarge: "The tags or artwork exceed the size limit.",
+        tagsChanged: "The file changed during the write. Reopen the editor.",
+        tagsReadOnly: "The file is read-only or has multiple hard links.",
+        trackRating: "Rating",
+        noRating: "Unrated",
+        listeningHistory: "History",
+        listeningEnabled: "Keep Listening History",
+        listeningRetention: "Keep History Entries For",
+        listeningForever: "No Limit",
+        listeningEmpty: "No listening history yet.",
+        listeningClear: "Clear History…",
+        listeningClearHelp: "History entries, play counts, and last played dates will be removed. Ratings will be kept.",
+        listeningReadOnly: "The history file could not be read. Writing to it is disabled.",
+        listeningThresholdHelp: "A short track is counted after half of its duration has played.",
+        tagsUnreadableCount: { "Files with unreadable tags: \($0)" },
+        tagsSavedCount: { "Files saved: \($0)" },
+        ratingStars: { "Rating: \($0) out of 5" },
+        listeningThreshold: { "Count after \($0) sec" },
+        listeningDays: { "\($0) days" },
+        listenCount: { "Plays: \($0)" },
+        tagFieldName: { field in
+            switch field {
+            case .title: return "Title"
+            case .artist: return "Artist"
+            case .albumArtist: return "Album Artist"
+            case .album: return "Album"
+            case .genre: return "Genre"
+            case .year: return "Year"
+            case .track: return "Track Number"
+            case .disc: return "Disc Number"
+            case .comment: return "Comment"
+            }
+        },
+        invalidTagField: { "Invalid value for “\($0)”. Use four digits for a year. Track and disc numbers can use the form 2/10." },
+        smartPlaylists: "Smart Playlists",
+        createSmartPlaylist: "New Smart Playlist…",
+        searchTracks: "Search Tracks",
+        searchFilters: "Filters",
+        clearSearch: "Clear Search and Filters",
+        noQueryResults: "No Tracks Found",
+        queryScope: "Default Search Scope",
+        queryCurrentScope: "Current Section",
+        queryMatch: "Match",
+        queryMatchAll: "All",
+        queryMatchAny: "Any",
+        queryField: "Field",
+        queryOperator: "Comparison",
+        queryValue: "Value",
+        queryRemoveRule: "Remove Rule",
+        queryAddRule: "Add Rule",
+        querySort: "Sort By",
+        queryManualSort: "Original Order",
+        queryDescending: "Descending",
+        queryLimit: "Track Limit, 0 for No Limit",
+        queryUnits: "Duration is in seconds. Relative dates are in days.",
+        queryPresets: "Presets",
+        queryEdit: "Edit…",
+        queryFieldName: { key in
+            switch key {
+            case "title": return "Title"
+            case "artist": return "Artist"
+            case "album": return "Album"
+            case "genre": return "Genre"
+            case "filename": return "Filename"
+            case "path": return "Path"
+            case "format": return "Format"
+            case "year": return "Year"
+            case "rating": return "Rating"
+            case "duration": return "Duration"
+            case "added": return "Date Added"
+            case "lastPlayed": return "Last Played"
+            case "plays": return "Play Count"
+            default: return key
+            }
+        },
+        queryOperatorName: { key in
+            switch key {
+            case "contains": return "Contains"
+            case "equals": return "Equals"
+            case "notEquals": return "Does Not Equal"
+            case "atLeast": return "At Least"
+            case "atMost": return "At Most"
+            case "withinDays": return "Within Last Days"
+            case "olderThanDays": return "Older Than Days"
+            case "exists": return "Has a Date"
+            case "missing": return "Has No Date"
+            default: return key
+            }
+        },
+        smartPresetName: { key in
+            switch key {
+            case "recentAdded": return "Recently Added"
+            case "recentPlayed": return "Recently Played"
+            case "frequent": return "Frequently Played"
+            case "highlyRated": return "Highly Rated"
+            case "unplayed": return "Unplayed"
+            default: return key
+            }
+        },
         menuEdit: "Edit",
         menuUndo: "Undo",
         menuCut: "Cut",
         menuCopy: "Copy",
         menuPaste: "Paste",
         menuSelectAll: "Select All",
+        settingsTitle: "Settings",
+        menuSettings: "Settings…",
+        menuPlayback: "Playback",
+        shuffle: "Shuffle",
+        repeatLabel: "Repeat",
+        repeatModeName: { mode in
+            switch mode {
+            case .off: return "Off"
+            case .queue: return "Queue"
+            case .track: return "Current track"
+            }
+        },
+        on: "On",
+        off: "Off",
+        nextShuffledCycle: "Next shuffled cycle",
+        resetPlaybackSettings: "Reset Playback Settings",
         menuWindow: "Window",
         minimize: "Minimize",
         zoom: "Zoom",

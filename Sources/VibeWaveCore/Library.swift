@@ -7,13 +7,15 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var bookmark: Data?
     public var title: String
     public var duration: TimeInterval
+    public var addedAt: Date?
 
-    public init(url: URL, duration: TimeInterval, bookmark: Data? = nil) {
+    public init(url: URL, duration: TimeInterval, bookmark: Data? = nil, addedAt: Date? = Date()) {
         id = UUID()
         self.url = url
         self.bookmark = bookmark
         title = url.deletingPathExtension().lastPathComponent
         self.duration = duration
+        self.addedAt = addedAt
     }
 
     public static func accepts(_ url: URL) -> Bool {
@@ -90,11 +92,14 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
     public var playlists: [Playlist]
     public var folders: [MusicFolder]
     public var order: [UUID]
+    public var smartPlaylists: [SmartPlaylist]
 
-    public init(playlists: [Playlist] = [], folders: [MusicFolder] = [], order: [UUID] = []) {
+    public init(playlists: [Playlist] = [], folders: [MusicFolder] = [], order: [UUID] = [],
+                smartPlaylists: [SmartPlaylist] = []) {
         self.playlists = playlists
         self.folders = folders
         self.order = order
+        self.smartPlaylists = smartPlaylists
     }
 
     public init(from decoder: Decoder) throws {
@@ -102,6 +107,7 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
         playlists = try container.decode([Playlist].self, forKey: .playlists)
         folders = try container.decodeIfPresent([MusicFolder].self, forKey: .folders) ?? []
         order = try container.decodeIfPresent([UUID].self, forKey: .order) ?? []
+        smartPlaylists = try container.decodeIfPresent([SmartPlaylist].self, forKey: .smartPlaylists) ?? []
     }
 }
 

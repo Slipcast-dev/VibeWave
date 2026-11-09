@@ -12,6 +12,7 @@ struct TrackRow: View {
     let sourceID: UUID?
     var dropTargetID: UUID?
     var libraryReorder = false
+    var allowReorder = true
     let theme: PlayerTheme
     let play: () -> Void
     @State private var targeted = false
@@ -28,6 +29,8 @@ struct TrackRow: View {
             }.frame(minWidth: 22, alignment: .trailing)
             Text(track.title).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 4)
+            let rating = model.listeningActivity.rating(for: track.url)
+            if rating > 0 { Text("★ \(rating)").accessibilityLabel(languages.strings.ratingStars(rating)) }
             Text(timeLabel(track.duration)).monospacedDigit()
         }
         .font(.custom("Arial", size: 12))
@@ -44,9 +47,9 @@ struct TrackRow: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: languages.strings.play, play)
         .onDrag { trackProvider(track, playlistID: sourceID) }
-        .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: dropTargetID, before: track.id,
+        .onDrop(of: allowReorder ? TrackDropDelegate.types : [], delegate: TrackDropDelegate(model: model, playlistID: dropTargetID, before: track.id,
                                                                           libraryReorder: libraryReorder, targeted: $targeted))
-        .contextMenu { TrackContextMenu(model: model, track: track, sourceID: sourceID, libraryOrder: libraryReorder) }
+        .contextMenu { TrackContextMenu(model: model, track: track, sourceID: sourceID, libraryOrder: libraryReorder, allowReorder: allowReorder) }
     }
 }
 
@@ -57,6 +60,7 @@ struct TrackContextMenu: View {
     let track: Track
     let sourceID: UUID?
     var libraryOrder = false
+    var allowReorder = true
     @ObservedObject private var languages = LanguageSettings.shared
     private var s: Strings { languages.strings }
     private var ids: [UUID] { libraryOrder ? model.libraryEntries.map(\.id) : (model.tracks(in: sourceID) ?? []).map(\.id) }
@@ -67,8 +71,26 @@ struct TrackContextMenu: View {
     var body: some View {
         Text(s.source(sourceName))
         Divider()
-        Button(s.moveUp) { move(-1) }.disabled(index == 0)
-        Button(s.moveDown) { move(1) }.disabled(index >= ids.count - 1)
+        Button(s.trackInfo) { model.editTags(for: [track]) }
+        Menu(s.trackRating) {
+            ForEach(0...5, id: \.self) { stars in
+                let title = stars == 0 ? s.noRating : s.ratingStars(stars)
+                Button {
+                    model.rate(track, stars: stars)
+                } label: {
+                    if model.listeningActivity.rating(for: track.url) == stars {
+                        Label(title, systemImage: "checkmark")
+                    } else {
+                        Text(title)
+                    }
+                }
+            }
+        }
+        Divider()
+        if allowReorder {
+            Button(s.moveUp) { move(-1) }.disabled(index == 0)
+            Button(s.moveDown) { move(1) }.disabled(index >= ids.count - 1)
+        }
         let targets = model.playlists.filter { $0.id != sourceID }
         if !targets.isEmpty {
             Menu(model.isPlaylist(sourceID) ? s.moveToPlaylist : s.addToPlaylist) {

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @ObservedObject var model: PlayerModel
     @State private var naming = false
+    @State private var queryEditor: QueryEditorRequest?
     @State private var name = ""
     @State private var renameID: UUID?
     @State private var dropTargeted = false
@@ -55,6 +56,10 @@ struct ContentView: View {
             .background(theme.panel).foregroundColor(theme.foreground)
             .buttonStyle(RetroButtonStyle(theme: theme)).retroBevel(theme)
         }
+        .sheet(item: $queryEditor) { QueryEditorView(model: model, request: $0) }
+        .sheet(item: $model.tagEditorRequest) { request in
+            TagEditorView(model: model, tracks: request.tracks)
+        }
         .alert("VibeWave", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button(s.ok) { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -74,8 +79,17 @@ struct ContentView: View {
                 ForEach(model.playlists) { playlist in
                     SidebarRow(model: model, id: playlist.id, icon: "music.note.list", title: playlist.name,
                                count: playlist.tracks.count, theme: theme) {
+                        Button(s.batchTags) { model.editTags(for: playlist.tracks) }.disabled(playlist.tracks.isEmpty)
                         Button(s.rename) { renameID = playlist.id; name = playlist.name; naming = true }
                         Button(s.deletePlaylist, role: .destructive) { model.deletePlaylist(playlist.id) }
+                    }
+                }
+                sectionTitle(s.smartPlaylists, help: s.createSmartPlaylist) { queryEditor = .smart(SmartPlaylist()) }
+                ForEach(model.smartPlaylists) { list in
+                    SidebarRow(model: model, id: list.id, icon: "sparkles", title: list.name,
+                               count: model.smartCounts[list.id, default: 0], theme: theme, acceptsDrop: false) {
+                        Button(s.queryEdit) { queryEditor = .smart(list) }
+                        Button(s.deletePlaylist, role: .destructive) { model.deleteSmartPlaylist(list.id) }
                     }
                 }
                 sectionTitle(s.folders, help: s.addMusicFolder, blockedByImport: true) { model.chooseFolder() }
@@ -123,6 +137,7 @@ struct ContentView: View {
                 Text(model.selectedTitle).lineLimit(1)
                 Spacer(minLength: 0)
             }.padding(.horizontal, 2)
+            searchBar
             TrackTable(model: model, theme: theme)
             HStack(spacing: 3) {
                 Button { model.importFiles() } label: { Text(s.addFileButton) }
@@ -147,7 +162,7 @@ struct ContentView: View {
                     Button { model.cancelImport() } label: { Text(s.cancel) }
                         .help(s.cancelImportHelp)
                 } else {
-                    Text("\(model.visibleTracks.count) · \(timeLabel(model.visibleTracks.reduce(0) { $0 + $1.duration }))")
+                    Text("\(model.displayedTracks.count) · \(timeLabel(model.displayedTracks.reduce(0) { $0 + $1.duration }))")
                         .font(.custom("Arial", size: 12)).lineLimit(1)
                         .padding(.horizontal, 6).frame(height: 24)
                         .background(theme.background).retroBevel(theme, sunken: true)
@@ -159,6 +174,31 @@ struct ContentView: View {
         .padding(5)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.panel).retroBevel(theme)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 4) {
+            TextField(s.searchTracks, text: $model.searchText)
+                .textFieldStyle(.plain)
+                .padding(4)
+                .background(theme.background).retroBevel(theme, sunken: true)
+            Picker(s.queryScope, selection: $model.searchScope) {
+                Text(s.queryCurrentScope).tag(SearchScope.section)
+                Text(s.allMusic).tag(SearchScope.library)
+            }
+            .labelsHidden()
+            .fixedSize()
+            Button(s.searchFilters) { queryEditor = .filters }
+                .buttonStyle(RetroButtonStyle(theme: theme, compact: true, isOn: model.searchFilter.isActive))
+            if model.hasSearch {
+                Button {
+                    model.searchText = ""
+                    model.searchFilter = LibraryQuery()
+                } label: { Image(systemName: "xmark") }
+                    .buttonStyle(RetroButtonStyle(theme: theme, compact: true))
+                    .accessibilityLabel(s.clearSearch)
+            }
+        }
     }
 
     private var viewMenu: some View {
@@ -176,7 +216,11 @@ struct ContentView: View {
             items += model.folders.map { folder in
                 .action("📁 " + folder.name, checked: model.selectedID == folder.id) { model.selectedID = folder.id }
             }
-            items += [.separator, .action(s.newPlaylistMenu) { renameID = nil; name = ""; naming = true }]
+            items += model.smartPlaylists.map { list in
+                .action("✦ " + list.name, checked: model.selectedID == list.id) { model.selectedID = list.id }
+            }
+            items += [.separator, .action(s.createSmartPlaylist) { queryEditor = .smart(SmartPlaylist()) }]
+            items += [.action(s.newPlaylistMenu) { renameID = nil; name = ""; naming = true }]
             return items
         }
         .help(s.viewHelp)

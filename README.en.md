@@ -14,11 +14,15 @@
 
 A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the only network request is the update check on GitHub at launch.
 
-[Download v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Download v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Features
 
 - Play, pause, stop, previous/next track, seeking, volume and balance.
+- Shuffle, repeat queue, and repeat track. Change modes in the player, the Playback menu, or Settings (`⌘,`).
+- Import and export M3U, M3U8, and PLS. Drop playlists into the player, or use relative paths to move a playlist with its music.
+- MP3/FLAC tags and artwork, batch editing, local star ratings, and configurable listening history.
+- Section and library search, filters, sorting, and saved smart playlists.
 - **Equalizer:** 10 bands (32 Hz – 16 kHz, ±12 dB), preamp and 9 presets; the **EQ** button sits to the right of the playback controls.
 - Compact Windows 95–style player: time display, scrolling title, kbps/kHz and level meter, with the playlist below.
 - “All Music”: playlists, folders and music outside playlists in one list, grouped by playlist or not.
@@ -93,6 +97,7 @@ The DMG, PKG, ZIP, `SHA256SUMS.txt` and a signed `update.json` appear in `.relea
 6. Click the time display to switch between elapsed and remaining time.
 7. **EQ** at the right end of the ⏮ ▶ ❚❚ ■ ⏭ row opens the equalizer: bands, preamp, “On”, “Presets ▾” and “Reset”. Changes are heard immediately and are saved.
 8. **RU ▾ / EN ▾** next to “View” chooses the language: “System”, “Русский” or “English”. By default VibeWave uses the macOS language: Russian if it comes before English in the language list, otherwise English.
+9. The **Repeat** button cycles through off, queue, and track. The **Shuffle** button works independently.
 
 **Keyboard shortcuts:** Space — play/pause; `⌘O` — add files; `⌘W` — close the window; `⌘M` — minimize; `⌘Q` — quit. After closing the window, click the Dock icon to open it again.
 

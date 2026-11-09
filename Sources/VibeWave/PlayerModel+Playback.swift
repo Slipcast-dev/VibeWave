@@ -5,72 +5,118 @@ import VibeWaveCore
 /// от просматриваемого раздела: переключение раздела не меняет то, что играет.
 extension PlayerModel {
     var nextTrack: Track? {
-        guard let id = current?.id, let index = queue.firstIndex(where: { $0.id == id }), index + 1 < queue.count else { return nil }
-        return queue[index + 1]
+        guard let id = current?.id else { return nil }
+        if shuffleEnabled {
+            return queue.first { $0.id == shuffleOrder.next }
+        }
+        guard let index = queue.firstIndex(where: { $0.id == id }) else { return queue.first }
+        if index + 1 < queue.count { return queue[index + 1] }
+        return repeatMode == .queue ? queue.first : nil
     }
 
     var playbackTracks: [Track]? {
         switch playbackSource {
         case .library: return libraryQueue(startingSection: librarySectionStart)
         case .container(let id): return tracks(in: id)
+        case .snapshot: return queue
         }
     }
 
     /// Изменения библиотеки обновляют следующие треки, не прерывая текущий.
     func refreshPlaybackQueue() {
-        guard current != nil, let tracks = playbackTracks else { return }
-        queue = tracks
+        guard let current = current else { return }
+        queue = playbackTracks ?? []
+        if shuffleEnabled { shuffleOrder.update(queue.map(\.id), current: current.id) }
     }
 
     func play(_ track: Track, in tracks: [Track], playlistID: UUID? = nil) {
-        queue = tracks
         playbackSource = .container(playlistID)
-        startTrack(track)
+        startQueue(tracks, at: track)
     }
 
     /// section — ID раздела режима «По плейлистам», из которого запущен трек.
     func playLibrary(_ track: Track, section: String? = nil) {
         librarySectionStart = groupByPlaylists ? section : nil
-        queue = libraryQueue(startingSection: librarySectionStart)
         playbackSource = .library
-        startTrack(track)
+        startQueue(libraryQueue(startingSection: librarySectionStart), at: track)
+    }
+
+    /// Выдача берётся снимком при запуске. Изменение поиска или правил не перестраивает текущую очередь.
+    func playQuery(_ track: Track) {
+        playbackSource = .snapshot
+        startQueue(queryResults.map(\.track), at: track)
     }
 
     func toggle() {
         guard engine.isLoaded else {
-            let tracks = visibleTracks
+            let tracks = displayedTracks
             guard let first = tracks.first else { return }
-            if isLibrarySelected { playLibrary(first) } else { play(first, in: tracks, playlistID: selectedID) }
+            if showsQueryResults { playQuery(first) }
+            else if isLibrarySelected { playLibrary(first) }
+            else { play(first, in: tracks, playlistID: selectedID) }
             return
         }
         if playing {
+            sampleListening(at: engine.currentTime)
+            listeningSession.suspend()
             engine.pause()
             timer = nil
             playing = false
         } else {
             guard engine.play() else { error = strings.errorResume; return }
             playing = true
+            resumeListening(at: engine.currentTime)
             startTimer()
         }
     }
 
     func seek(_ value: Double) {
         let target = max(0, min(value, duration))
+        if playing { sampleListening(at: engine.currentTime) }
         engine.seek(to: target)
+        if playing { resumeListening(at: engine.currentTime) }
         position = target
     }
 
     func next() {
-        if let next = nextTrack { startTrack(next) } else { stop() }
+        guard let current = current else { return }
+        let following: Track?
+        if shuffleEnabled {
+            let id = shuffleOrder.advance(from: current.id, repeatingQueue: repeatMode == .queue)
+            following = queue.first { $0.id == id }
+        } else {
+            following = nextTrack
+        }
+        if let following = following { startTrack(following) } else { stop() }
+    }
+
+    /// Ручной переход всегда идёт по очереди. Повтор трека действует при его завершении.
+    func trackFinished() {
+        sampleListening(at: duration)
+        listeningSession.suspend()
+        if repeatMode == .track, let current = current, queue.contains(where: { $0.id == current.id }) {
+            startTrack(current)
+        } else {
+            next()
+        }
     }
 
     func previous() {
         if position > 3 { seek(0); return }
-        guard let id = current?.id, let index = queue.firstIndex(where: { $0.id == id }) else { return }
+        guard let current = current else { return }
+        if shuffleEnabled {
+            let id = shuffleOrder.retreat(from: current.id)
+            if let track = queue.first(where: { $0.id == id }) { startTrack(track) }
+            else { seek(0) }
+            return
+        }
+        guard let index = queue.firstIndex(where: { $0.id == current.id }) else { return }
         startTrack(queue[max(0, index - 1)])
     }
 
     func stop() {
+        if playing { sampleListening(at: engine.currentTime) }
+        listeningSession = ListeningSession()
         timer = nil
         engine.unload()
         playing = false
@@ -97,7 +143,13 @@ extension PlayerModel {
 
     // MARK: Внутреннее
 
-    /// Переход вперёд/назад идёт по текущей очереди.
+    private func startQueue(_ tracks: [Track], at track: Track) {
+        queue = tracks
+        if shuffleEnabled { shuffleOrder.reset(queue.map(\.id), startingAt: track.id) }
+        startTrack(track)
+    }
+
+    /// Смена файла не сбрасывает историю переходов внутри очереди.
     private func startTrack(_ track: Track) {
         stop()
         do {
@@ -109,6 +161,7 @@ extension PlayerModel {
             current = track
             duration = info.duration
             playing = true
+            resumeListening(at: engine.currentTime)
             startTimer()
         } catch {
             stop()
@@ -142,6 +195,7 @@ extension PlayerModel {
         timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect().sink { [weak self] _ in
             guard let self = self else { return }
             self.position = self.engine.currentTime
+            self.sampleListening(at: self.position)
         }
     }
 }

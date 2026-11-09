@@ -23,6 +23,7 @@ extension PlayerModel {
     func deletePlaylist(_ id: UUID) {
         playlists.removeAll { $0.id == id }
         if selectedID == id { selectedID = nil }
+        refreshPlaybackQueue()
         save()
     }
 

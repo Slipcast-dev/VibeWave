@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import SwiftUI
+import VibeWaveCore
 
 /// AppKit управляет единственным окном без стандартной полосы macOS;
 /// интерфейс внутри окна остаётся SwiftUI.
@@ -18,6 +20,7 @@ struct VibeWaveApp {
 final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let model = PlayerModel()
     private var playerWindow: RetroWindowController?
+    private var settingsWindow: NSWindowController?
     private var languageObserver: AnyCancellable?
     private var updater: Updater?
 
@@ -73,12 +76,18 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         let appMenu = NSMenu(title: "VibeWave")
         appMenu.addItem(withTitle: s.menuAbout, action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: s.menuSettings, action: #selector(showSettings), keyEquivalent: ",").target = self
+        settingsWindow?.window?.title = s.settingsTitle
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: s.menuQuit, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let appItem = NSMenuItem(); appItem.submenu = appMenu; main.addItem(appItem)
 
         let file = NSMenu(title: s.menuFile)
         let add = file.addItem(withTitle: s.menuAddFiles, action: #selector(addFiles), keyEquivalent: "o")
         add.target = self
+        file.addItem(withTitle: s.importPlaylistFile, action: #selector(importPlaylist), keyEquivalent: "").target = self
+        file.addItem(withTitle: s.exportPlaylistFile, action: #selector(exportPlaylist), keyEquivalent: "").target = self
+        file.addItem(.separator())
         let close = file.addItem(withTitle: s.closeWindow, action: #selector(closePlayer), keyEquivalent: "w")
         close.target = self
         let fileItem = NSMenuItem(title: s.menuFile, action: nil, keyEquivalent: ""); fileItem.submenu = file; main.addItem(fileItem)
@@ -92,6 +101,21 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         edit.addItem(withTitle: s.menuSelectAll, action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         let editItem = NSMenuItem(title: s.menuEdit, action: nil, keyEquivalent: ""); editItem.submenu = edit; main.addItem(editItem)
 
+        let playbackMenu = NSMenu(title: s.menuPlayback)
+        playbackMenu.addItem(withTitle: s.shuffle, action: #selector(toggleShuffle), keyEquivalent: "").target = self
+        let repeatMenu = NSMenu(title: s.repeatLabel)
+        for (index, mode) in RepeatMode.allCases.enumerated() {
+            let item = repeatMenu.addItem(withTitle: s.repeatModeName(mode), action: #selector(setRepeatMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+        }
+        let repeatItem = NSMenuItem(title: s.repeatLabel, action: nil, keyEquivalent: "")
+        repeatItem.submenu = repeatMenu
+        playbackMenu.addItem(repeatItem)
+        let playbackItem = NSMenuItem(title: s.menuPlayback, action: nil, keyEquivalent: "")
+        playbackItem.submenu = playbackMenu
+        main.addItem(playbackItem)
+
         let windowMenu = NSMenu(title: s.menuWindow)
         let minimize = windowMenu.addItem(withTitle: s.minimize, action: #selector(minimizePlayer), keyEquivalent: "m")
         minimize.target = self
@@ -102,13 +126,44 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         NSApp.windowsMenu = windowMenu
     }
 
+    @objc private func showSettings() {
+        if settingsWindow == nil {
+            let view = SettingsView(model: model)
+            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            window.styleMask = [.titled, .closable]
+            window.title = model.strings.settingsTitle
+            window.center()
+            settingsWindow = NSWindowController(window: window)
+        }
+        settingsWindow?.showWindow(nil)
+        settingsWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func toggleShuffle() { model.shuffleEnabled.toggle() }
+
+    @objc private func setRepeatMode(_ item: NSMenuItem) {
+        model.repeatMode = RepeatMode.allCases[item.tag]
+    }
+
+    @objc private func importPlaylist() { showPlayer(); model.choosePlaylistFiles() }
+    @objc private func exportPlaylist() { model.choosePlaylistExport() }
     @objc private func addFiles() { showPlayer(); model.importFiles() }
-    @objc private func closePlayer() { playerWindow?.window?.close() }
+    @objc private func closePlayer() {
+        if let settings = settingsWindow?.window, settings.isKeyWindow { settings.close() }
+        else { playerWindow?.window?.close() }
+    }
     @objc private func minimizePlayer() { playerWindow?.window?.miniaturize(nil) }
     @objc private func zoomPlayer() { playerWindow?.window?.zoom(nil) }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(addFiles) { return !model.importing }
+        if menuItem.action == #selector(addFiles) || menuItem.action == #selector(importPlaylist) { return !model.importing }
+        if menuItem.action == #selector(exportPlaylist) { return model.selected != nil }
+        if menuItem.action == #selector(toggleShuffle) {
+            menuItem.state = model.shuffleEnabled ? .on : .off
+        }
+        if menuItem.action == #selector(setRepeatMode(_:)) {
+            menuItem.state = model.repeatMode == RepeatMode.allCases[menuItem.tag] ? .on : .off
+        }
         return true
     }
 }

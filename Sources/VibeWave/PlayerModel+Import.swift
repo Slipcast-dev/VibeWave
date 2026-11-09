@@ -16,6 +16,7 @@ extension PlayerModel {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "flac")].compactMap { $0 }
+            + PlaylistFileFormat.allCases.map(\.contentType)
         guard panel.runModal() == .OK else { return }
         receiveFiles(panel.urls, into: targetID)
     }
@@ -25,16 +26,27 @@ extension PlayerModel {
     func openFiles(_ urls: [URL]) {
         guard !importing else { error = strings.errorImportBusy; return }
         selectedID = nil
-        importURLs(urls, into: nil, autoplay: true)
+        receiveFiles(urls, autoplay: true)
     }
 
     /// nil — очередь. Отсутствующий или удалённый плейлист не создаётся заново.
     /// Папки из Finder добавляются как папки библиотеки; файлы в папку не перетаскиваются.
-    func receiveFiles(_ urls: [URL], into playlistID: UUID? = nil, before destination: UUID? = nil) {
+    func receiveFiles(_ urls: [URL], into playlistID: UUID? = nil, before destination: UUID? = nil,
+                      autoplay: Bool = false) {
         guard !importing else { error = strings.errorImportBusy; return }
         let directories = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-        if !directories.isEmpty { addFolders(directories); return }
-        importURLs(urls, into: isFolder(playlistID) ? nil : playlistID, before: destination)
+        let files = urls.filter { !directories.contains($0) }
+        let playlists = files.filter { PlaylistFileFormat(url: $0) != nil }
+        let targetID = isFolder(playlistID) ? nil : playlistID
+        if !playlists.isEmpty {
+            let audio = files.filter { PlaylistFileFormat(url: $0) == nil }
+            importPlaylistFiles(playlists, audio: audio, folders: directories, into: targetID,
+                                before: destination, autoplay: autoplay)
+        } else if !directories.isEmpty {
+            addFolders(directories)
+        } else {
+            importURLs(urls, into: targetID, before: destination, autoplay: autoplay)
+        }
     }
 
     func chooseFolder() {
@@ -73,7 +85,7 @@ extension PlayerModel {
                 }
                 return (MusicFolder(url: url, bookmark: bookmark, tracks: scan.added.tracks), scan.added.failures)
             }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.finishJob(job), let scanned = scanned else { return }
                 let added = scanned.compactMap(\.0)
                 self.folders += added
@@ -92,7 +104,7 @@ extension PlayerModel {
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let scan = try? MediaScanner.scanFolder(folder.url, bookmark: folder.bookmark, known: known, job: job, progress: progress)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.finishJob(job) else { return }
                 // Недоступная папка не очищается: список треков и их порядок сохраняются.
                 guard let scan = scan else {
@@ -101,6 +113,7 @@ extension PlayerModel {
                 }
                 guard let index = self.folders.firstIndex(where: { $0.id == id }) else { return }
                 self.folders[index].merge(files: scan.files, added: scan.added.tracks)
+                self.invalidateQueryTags(for: scan.files)
                 self.refreshPlaybackQueue()
                 self.save()
                 self.report(failures: scan.added.failures)
@@ -118,9 +131,51 @@ extension PlayerModel {
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let batch = try? MediaScanner.readTracks(supported, job: job, progress: progress)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.finishJob(job), let batch = batch else { return }
                 self.apply(batch, into: targetID, before: destination, autoplay: autoplay)
+            }
+        }
+    }
+
+    /// Тот же вход используется для меню, Finder и перетаскивания. Аудиофайлы
+    /// смешанного выбора идут в обычное назначение, а списки сохраняются отдельно.
+    private func importPlaylistFiles(_ urls: [URL], audio: [URL], folders: [URL], into targetID: UUID?,
+                                     before destination: UUID?, autoplay: Bool) {
+        let job = beginJob(.files)
+        let progress = progressHandler(for: job)
+        let options = playlistFileOptions
+        let strings = strings
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var result = PlaylistImportResult()
+            var audioBatch = MediaScanner.Batch()
+            do {
+                for url in urls {
+                    if job.isCancelled { throw CancellationError() }
+                    try result.read(url, options: options, strings: strings, job: job, progress: progress)
+                }
+                let supportedAudio = audio.filter { Track.accepts($0) && MusicFiles.isRegularFile($0) }
+                audioBatch = try MediaScanner.readTracks(supportedAudio, job: job, progress: progress)
+                if !audio.isEmpty && supportedAudio.isEmpty { result.failures.append(strings.errorNoSupportedFiles) }
+            } catch {
+                // Отменённая задача уже разблокировала интерфейс. Старый результат отбрасывается.
+                DispatchQueue.main.async { [weak self] in _ = self?.finishJob(job) }
+                return
+            }
+            let imported = result
+            let batch = audioBatch
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.finishJob(job) else { return }
+                if !batch.tracks.isEmpty || !batch.failures.isEmpty {
+                    self.apply(batch, into: targetID, before: destination, autoplay: autoplay)
+                }
+                if let last = imported.playlists.last {
+                    self.playlists += imported.playlists
+                    self.selectedID = last.id
+                    self.save()
+                }
+                self.report(failures: imported.failures + batch.failures)
+                if !folders.isEmpty { self.addFolders(folders) }
             }
         }
     }
@@ -176,7 +231,7 @@ extension PlayerModel {
     private func progressHandler(for job: ImportJob) -> MediaScanner.Progress {
         { [weak self] done, total in
             guard job.shouldReport(final: total.map { done >= $0 } ?? false) else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.importJob === job else { return }
                 self.importProgress?.done = done
                 self.importProgress?.total = total

@@ -193,6 +193,7 @@ struct RetroVerticalSlider: View {
 
 /// Кнопка в общем ретро-стиле, открывающая нативное меню под собой.
 /// SwiftUI Menu на macOS рисует собственную кнопку и не принимает ButtonStyle.
+@MainActor
 struct RetroMenuButton: View {
     enum Item {
         case action(String, checked: Bool = false, () -> Void)

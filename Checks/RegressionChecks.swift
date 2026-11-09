@@ -17,6 +17,7 @@ struct RegressionChecks {
         languages.preference = .ru
         let support = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
+        checkShuffleOrder()
         let a = Track(url: URL(fileURLWithPath: "/tmp/a.mp3"), duration: 84)
         let b = Track(url: URL(fileURLWithPath: "/tmp/b.flac"), duration: 100)
         let c = Track(url: URL(fileURLWithPath: "/tmp/c.mp3"), duration: 50)
@@ -51,6 +52,9 @@ struct RegressionChecks {
         precondition(timeLabel(84) == "1:24")
         // Настоящие короткие аудиофайлы воспроизводят сбой обязательной security-scoped закладки.
         let fixtures = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+        try checkPlaylistFileExchange(in: support, fixtures: fixtures)
+        try checkTagsAndListening(in: support, fixtures: fixtures)
+        try checkSearchAndSmartPlaylists(in: support, fixtures: fixtures)
         let audioURLs = [fixtures.appendingPathComponent("silence.flac"), fixtures.appendingPathComponent("silence.mp3")]
         for url in audioURLs {
             let audio = try AVAudioPlayer(contentsOf: url)
@@ -189,6 +193,7 @@ struct RegressionChecks {
         let reopenedAudio = PlayerModel(supportDirectory: support.appendingPathComponent("AudioCheck"))
         precondition(reopenedAudio.equalizer == audioModel.equalizer && reopenedAudio.equalizer.gains[0] == -6, "Эквалайзер сохраняется")
         print("PASS: AVAudioEngine playback, equalizer changes while playing, seek, auto-advance, stop at end, equalizer persistence")
+        checkPlaybackModes(in: support, clips: clips)
         // Папки, общий список «Вся музыка», ручной порядок и группировка.
         let libraryModel = PlayerModel(supportDirectory: support.appendingPathComponent("LibraryCheck"))
         libraryModel.groupByPlaylists = false
@@ -339,6 +344,369 @@ struct RegressionChecks {
         print("PASS: real MP3/FLAC import and valid app icon")
         print("PASS: migration, reorder up/down/end, cross-playlist move, duplicates, persistence, payload, formats")
     }
+    /// Одинаковые правила используются для выдачи, умного списка и очереди при запуске.
+    static func checkSearchAndSmartPlaylists(in support: URL, fixtures: URL) throws {
+        let manager = FileManager.default
+        let root = support.appendingPathComponent("SearchCheck", isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let firstURL = root.appendingPathComponent("Первый.mp3")
+        let secondURL = root.appendingPathComponent("Второй.flac")
+        try manager.copyItem(at: fixtures.appendingPathComponent("silence.mp3"), to: firstURL)
+        try manager.copyItem(at: fixtures.appendingPathComponent("silence.flac"), to: secondURL)
+        var edit = AudioTagEdit()
+        edit.fields = [.artist: "Группа Ёлка", .album: "Весна", .genre: "Рок", .year: "2024"]
+        _ = try AudioMetadataFile.write(edit, to: firstURL)
+        edit.fields = [.artist: "ГРУППА ЁЛКА", .album: "Осень", .genre: "Джаз", .year: "2018"]
+        _ = try AudioMetadataFile.write(edit, to: secondURL)
+        let first = Track(url: firstURL, duration: 0.26)
+        let second = Track(url: secondURL, duration: 0.1)
+        let suite = "VibeWave.SearchCheck.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        let firstList = Playlist(name: "Только MP3", tracks: [first])
+        let secondList = Playlist(name: "Только FLAC", tracks: [second])
+        model.playlists = [firstList, secondList]
+        model.selectedID = firstList.id
+        model.searchText = "елка"
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [first.id])
+        model.searchScope = .library
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [first.id, second.id])
+        model.searchFilter.rules = [QueryRule(.year, .atLeast, "2020"), QueryRule(.format, .equals, "FLAC")]
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.isEmpty)
+        model.searchFilter.matchAny = true
+        model.searchFilter.sort = .year
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [second.id, first.id])
+
+        model.playQuery(second)
+        precondition(model.playing && model.current?.id == second.id, model.error ?? "Search playback")
+        model.toggle()
+        let originalQueue = model.queue
+        model.searchText = "не найдено"
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.isEmpty && model.queue == originalQueue && model.current?.id == second.id)
+        model.stop()
+        model.searchText = ""
+        model.searchFilter = LibraryQuery()
+        model.searchScope = .section
+        var list = SmartPlaylist()
+        list.name = "Любимые свежие"
+        list.query.rules = [QueryRule(.rating, .atLeast, "4"), QueryRule(.added, .withinDays, "30"),
+                            QueryRule(.lastPlayed, .missing)]
+        list.query.sort = .rating
+        list.query.descending = true
+        list.query.limit = 1
+        model.saveSmartPlaylist(list)
+        waitFor { model.queryReady }
+        precondition(model.selectedSmart?.id == list.id && model.displayedTracks.isEmpty)
+        model.rate(first, stars: 4)
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [first.id])
+        model.rate(second, stars: 5)
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [second.id] && model.smartCounts[list.id] == 1)
+        list.name = "Переименованный список"
+        model.saveSmartPlaylist(list)
+        let restored = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(restored.smartPlaylists == [list] && restored.playlists == model.playlists)
+        restored.deleteSmartPlaylist(list.id)
+        let persisted = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(persisted.smartPlaylists.isEmpty)
+
+        model.selectedID = nil
+        model.searchText = "проверка обновления"
+        waitFor { model.queryReady }
+        precondition(model.displayedTracks.isEmpty)
+        var wrote = false
+        edit.fields = [.artist: "Проверка обновления"]
+        model.writeTags(edit, tracks: [first], job: ImportJob(), progress: { _ in }) { failures, count in
+            precondition(failures.isEmpty && count == 1)
+            wrote = true
+        }
+        waitFor { wrote && model.queryReady }
+        precondition(model.displayedTracks.map(\.id) == [first.id])
+        print("PASS: Unicode search scopes, combined filters and sort, snapshot playback, live smart lists and tag changes")
+    }
+
+    /// Реальные MP3 и FLAC редактируются только в тестовой папке.
+    static func checkTagsAndListening(in support: URL, fixtures: URL) throws {
+        let manager = FileManager.default
+        let root = support.appendingPathComponent("TagListeningCheck", isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let png = fixtures.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Assets/AppIcon.png")
+        let cover = try TrackTagAccess.importArtwork(png)
+        var first: Track?
+        for ext in ["mp3", "flac"] {
+            let file = root.appendingPathComponent("Редактируемый.\(ext)")
+            let original = try Data(contentsOf: fixtures.appendingPathComponent("silence.\(ext)"))
+            let marker = Data("VibeWave preservation check".utf8)
+            let audio: Data
+            var tagged: Data
+            if ext == "mp3" {
+                // Неизвестный кадр ID3v2.4. Его данные и MPEG-поток должны остаться прежними.
+                let frameSize = marker.count
+                tagged = Data([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, UInt8(frameSize + 10)])
+                tagged.append(contentsOf: [0x58, 0x50, 0x52, 0x56, 0, 0, 0, UInt8(frameSize), 0, 0])
+                tagged.append(marker)
+                audio = original
+            } else {
+                // FLAC APPLICATION с непрозрачными для редактора данными.
+                tagged = Data(original.prefix(42))
+                tagged[4] = 0
+                tagged.append(contentsOf: [0x82, 0, 0, UInt8(marker.count)])
+                tagged.append(marker)
+                audio = Data(original.dropFirst(42))
+            }
+            tagged.append(audio)
+            try tagged.write(to: file)
+            let before = try AVAudioFile(forReading: file).length
+            var edit = AudioTagEdit()
+            edit.fields = [.title: "Первая песня", .artist: "Артист", .albumArtist: "Группа",
+                           .album: "Альбом", .genre: "Электроника", .year: "2024",
+                           .track: "2/10", .disc: "1", .comment: "Комментарий"]
+            edit.artwork = .replace(cover)
+            let saved = try AudioMetadataFile.write(edit, to: file)
+            let metadata = try AudioMetadataFile.read(file)
+            precondition(saved.fields == edit.fields && metadata.fields == edit.fields)
+            precondition(metadata.artwork?.data == cover.data)
+            let revised = try Data(contentsOf: file)
+            precondition(revised.suffix(audio.count) == audio && revised.range(of: marker) != nil)
+            let after = try AVAudioFile(forReading: file).length
+            precondition(before == after)
+
+            var selective = AudioTagEdit()
+            selective.fields = [.album: "", .comment: "Новая запись"]
+            selective.artwork = .remove
+            _ = try AudioMetadataFile.write(selective, to: file)
+            let next = try AudioMetadataFile.read(file)
+            precondition(next.fields[.album] == nil && next.fields[.comment] == "Новая запись")
+            precondition(next.fields[.title] == edit.fields[.title] && next.artwork == nil)
+            let beforeRejected = try Data(contentsOf: file)
+            selective.fields = [.year: "Ошибка"]
+            do {
+                _ = try AudioMetadataFile.write(selective, to: file)
+                preconditionFailure("Год должен быть проверен до записи")
+            } catch AudioMetadataFile.Failure.invalidField(.year) {}
+            let afterRejected = try Data(contentsOf: file)
+            precondition(beforeRejected == afterRejected)
+            if first == nil { first = Track(url: file, duration: 0.26) }
+        }
+
+        var session = ListeningSession()
+        session.resume(at: 0, time: 100)
+        precondition(!session.sample(position: 2, time: 102, duration: 60, threshold: 5))
+        session.suspend()
+        precondition(!session.sample(position: 45, time: 1_000, duration: 60, threshold: 5))
+        session.resume(at: 45, time: 1_000)
+        precondition(session.sample(position: 48, time: 1_003, duration: 60, threshold: 5))
+        precondition(!session.sample(position: 53, time: 1_008, duration: 60, threshold: 5))
+
+        let suite = "VibeWave.ListeningCheck.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        let track = first!
+        let copy = Track(url: track.url, duration: track.duration)
+        model.playlists = [Playlist(name: "Первый", tracks: [track]), Playlist(name: "Второй", tracks: [copy])]
+        model.rate(track, stars: 4)
+        precondition(model.listeningActivity.rating(for: copy.url) == 4)
+
+        var updated = AudioTagEdit()
+        updated.fields = [.title: "Название в обеих копиях"]
+        var completed = false
+        model.writeTags(updated, tracks: [track], job: ImportJob(), progress: { _ in }) { failures, count in
+            precondition(failures.isEmpty && count == 1, failures.joined(separator: "\n"))
+            completed = true
+        }
+        waitFor { completed }
+        precondition(model.playlists.flatMap(\.tracks).allSatisfy { $0.title == updated.fields[.title] })
+        let imported = model.playlists[0].tracks[0]
+        model.play(imported, in: [imported], playlistID: model.playlists[0].id)
+        waitFor { model.current == nil }
+        precondition(model.listeningActivity.events.count == 1 && model.error == nil)
+        model.listeningOptions.enabled = false
+        model.play(imported, in: [imported], playlistID: model.playlists[0].id)
+        waitFor { model.current == nil }
+        precondition(model.listeningActivity.events.count == 1)
+        let restored = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(restored.listeningActivity == model.listeningActivity && !restored.listeningOptions.enabled)
+        restored.clearListeningHistory()
+        precondition(restored.listeningActivity.events.isEmpty && restored.listeningActivity.summaries.isEmpty)
+        precondition(restored.listeningActivity.rating(for: track.url) == 4)
+        print("PASS: MP3/FLAC tags, artwork, byte-identical audio, unknown metadata, shared ratings and history")
+    }
+
+    /// Переносим плейлист вместе с музыкой и проверяем обычный вход drag-and-drop.
+    static func checkPlaylistFileExchange(in support: URL, fixtures: URL) throws {
+        let manager = FileManager.default
+        let original = support.appendingPathComponent("PlaylistOriginal", isDirectory: true)
+        let moved = support.appendingPathComponent("PlaylistMoved", isDirectory: true)
+        let music = original.appendingPathComponent("Музыка", isDirectory: true)
+        try manager.createDirectory(at: music, withIntermediateDirectories: true)
+        let one = music.appendingPathComponent("# Первая 100%.mp3")
+        let two = original.appendingPathComponent("Вторая.flac")
+        try manager.copyItem(at: fixtures.appendingPathComponent("silence.mp3"), to: one)
+        try manager.copyItem(at: fixtures.appendingPathComponent("silence.flac"), to: two)
+        var track = Track(url: one, duration: 0.26)
+        track.title = "Исполнитель, название"
+        let tracks = [track, Track(url: two, duration: 0.1)]
+        var options = PlaylistFileOptions()
+        for format in PlaylistFileFormat.allCases {
+            let destination = original.appendingPathComponent("Список.\(format.rawValue)")
+            options.exportEncoding = format == .m3u ? .windows1251 : .utf8
+            let bytes = try PlaylistFile.encode(tracks, destination: destination, options: options)
+            try bytes.write(to: destination)
+        }
+
+        options.relativePaths = false
+        let absolute = original.appendingPathComponent("Absolute.pls")
+        let absoluteData = try PlaylistFile.encode(tracks, destination: absolute, options: options)
+        let absoluteEntries = try PlaylistFile.decode(absoluteData, format: .pls, legacyEncoding: .utf8)
+        precondition(PlaylistFile.localURL(for: absoluteEntries[0], in: absolute)?.path == one.path)
+        let legacy = original.appendingPathComponent("Legacy.m3u")
+        options.exportEncoding = .windows1252
+        do {
+            _ = try PlaylistFile.encode(tracks, destination: legacy, options: options)
+            preconditionFailure("Экспорт с потерей символов должен быть отклонён")
+        } catch PlaylistFile.Failure.lossyEncoding {}
+        do {
+            _ = try PlaylistFile.decode(Data([0xFF]), format: .m3u8, legacyEncoding: .windows1251)
+            preconditionFailure("M3U8 требует UTF-8")
+        } catch PlaylistFile.Failure.invalidEncoding {}
+        do {
+            _ = try PlaylistFile.decode(Data("#EXTM3U\n#EXT-X-VERSION:6".utf8), format: .m3u8, legacyEncoding: .utf8)
+            preconditionFailure("HLS не является списком локальных треков")
+        } catch PlaylistFile.Failure.streamingManifest {}
+
+        try manager.moveItem(at: original, to: moved)
+        let files = PlaylistFileFormat.allCases.map { moved.appendingPathComponent("Список.\($0.rawValue)") }
+        for url in files {
+            let entries = try PlaylistFile.read(url, legacyEncoding: .windows1251)
+            precondition(entries.first?.title == track.title)
+            precondition(entries.map { PlaylistFile.localURL(for: $0, in: url)?.lastPathComponent }
+                         == [one.lastPathComponent, two.lastPathComponent])
+            precondition(entries.allSatisfy { entry in
+                PlaylistFile.localURL(for: entry, in: url).map { manager.fileExists(atPath: $0.path) } == true
+            })
+        }
+
+        let mixed = moved.appendingPathComponent("Mixed.pls")
+        try """
+        [Playlist]
+        File5=https://example.org/live.mp3
+        File3=Вторая.flac
+        File4=missing.mp3
+        File2=Вторая.flac
+        File1=Музыка\\# Первая 100%.mp3
+        NumberOfEntries=5
+        Version=2
+        """.write(to: mixed, atomically: true, encoding: .utf8)
+        let suite = "VibeWave.PlaylistCheck.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = support.appendingPathComponent("PlaylistFileCheck")
+        let model = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        let providers = (files + [mixed]).compactMap { NSItemProvider(contentsOf: $0) }
+        precondition(providers.count == 4 && DropReceiver.receive(providers, model: model, playlistID: nil))
+        waitFor { model.playlists.count == 4 || model.error != nil }
+        precondition(model.playlists.count == 4 && model.openTracks.isEmpty)
+        precondition(model.playlists.allSatisfy { $0.tracks.map(\.url.lastPathComponent) == [one.lastPathComponent, two.lastPathComponent] })
+        precondition(model.error?.contains("missing.mp3") == true && model.error?.contains("https://") == true)
+        model.error = nil
+        model.playlistFileOptions.reportMissingFiles = false
+        model.receiveFiles([mixed])
+        waitFor { !model.importing }
+        precondition(model.playlists.count == 5 && model.error?.contains("https://") == true)
+        precondition(model.error?.contains("missing.mp3") == false)
+        let saved = moved.appendingPathComponent("Saved.m3u8")
+        model.exportPlaylist(model.playlists[0], to: saved, options: model.playlistFileOptions)
+        waitFor { manager.fileExists(atPath: saved.path) }
+        let exported = try PlaylistFile.read(saved, legacyEncoding: .utf8)
+        precondition(exported.map(\.title) == model.playlists[0].tracks.map(\.title))
+        let restored = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(restored.playlists == model.playlists && !restored.playlistFileOptions.reportMissingFiles)
+        print("PASS: M3U/M3U8/PLS round-trip, moved paths, legacy encoding, drag import, unsupported entries, export, preferences")
+    }
+
+    /// Случайный порядок проверяется по инвариантам, без предположения о конкретной перестановке.
+    static func checkShuffleOrder() {
+        let first = UUID(), second = UUID(), third = UUID(), added = UUID()
+        var order = ShuffleOrder()
+        order.reset([], startingAt: first)
+        precondition(order.advance(from: first, repeatingQueue: true) == nil)
+        order.reset([first], startingAt: first)
+        precondition(order.advance(from: first, repeatingQueue: false) == nil)
+        precondition(order.advance(from: first, repeatingQueue: true) == first)
+
+        order.reset([first, second, third], startingAt: first)
+        let next = order.advance(from: first, repeatingQueue: false)!
+        let last = order.next!
+        precondition(Set([first, next, last]) == Set([first, second, third]))
+        precondition(order.retreat(from: next) == first)
+        precondition(order.advance(from: first, repeatingQueue: false) == next)
+        order.update([added, next, first], current: next)
+        precondition(order.advance(from: next, repeatingQueue: false) == added)
+        precondition(order.advance(from: added, repeatingQueue: false) == nil)
+
+        var cycle: [UUID] = []
+        var current = added
+        for _ in 0..<3 {
+            current = order.advance(from: current, repeatingQueue: true)!
+            cycle.append(current)
+        }
+        precondition(cycle.first != added && Set(cycle) == Set([first, next, added]))
+        precondition(order.advance(from: current, repeatingQueue: false) == nil)
+        print("PASS: shuffle cycles, actual back/forward history, live queue changes")
+    }
+
+    /// Публичные команды модели и фактическое завершение аудиофайла используют разные переходы.
+    static func checkPlaybackModes(in support: URL, clips: [Track]) {
+        let suite = "VibeWave.PlaybackCheck.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let root = support.appendingPathComponent("PlaybackModeCheck")
+        let model = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(!model.shuffleEnabled && model.repeatMode == .off)
+        model.openTracks = clips
+
+        model.repeatMode = .queue
+        model.play(clips[1], in: clips)
+        waitFor { model.current?.id == clips[0].id || model.error != nil }
+        precondition(model.playing && model.error == nil, "Повтор очереди автоматически возвращается к первому треку")
+
+        model.repeatMode = .track
+        model.play(clips[0], in: clips)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        precondition(model.playing && model.current?.id == clips[0].id && model.error == nil,
+                     "Завершившийся трек повторяется")
+        model.next()
+        precondition(model.current?.id == clips[1].id, "Ручная команда не повторяет трек")
+        model.next()
+        precondition(model.current == nil, "При повторе одного трека ручной переход не зацикливает очередь")
+
+        model.shuffleEnabled = true
+        model.repeatMode = .off
+        model.play(clips[1], in: clips)
+        precondition(model.nextTrack?.id == clips[0].id)
+        model.next()
+        precondition(model.current?.id == clips[0].id && model.nextTrack == nil)
+        model.previous()
+        precondition(model.current?.id == clips[1].id && model.nextTrack?.id == clips[0].id)
+        model.removeTrack(clips[0].id, from: nil)
+        precondition(model.nextTrack == nil && model.current?.id == clips[1].id)
+        model.stop()
+
+        model.repeatMode = .track
+        let reopened = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        precondition(reopened.shuffleEnabled && reopened.repeatMode == .track && !reopened.playing)
+        print("PASS: repeat queue and track, manual next, shuffle navigation, settings persistence")
+    }
+
     /// Сквозная проверка автообновления на тестовом приложении: подписанный архив проходит проверки,
     /// подменённый или чужой — нет; установщик ждёт завершения процесса и заменяет приложение на диске.
     static func checkUpdateInstallation(in root: URL) throws {

@@ -19,6 +19,7 @@ final class AudioEngine {
     var onFinish: (() -> Void)?
     /// Воспроизведение остановилось само (например, после смены аудиоустройства не удалось продолжить).
     var onFailure: ((Error) -> Void)?
+    var onRecovered: ((TimeInterval) -> Void)?
     var volume: Float = 0.75 { didSet { balance.volume = volume } }
     var pan: Float = 0 { didSet { balance.pan = pan } }
     var equalizer = EqualizerSettings() { didSet { applyEqualizer() } }
@@ -58,7 +59,7 @@ final class AudioEngine {
         // Смена выхода (наушники, AirPods) останавливает движок: восстанавливаем позицию и состояние.
         configurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
-            DispatchQueue.main.async { self?.recoverAfterConfigurationChange() }
+            DispatchQueue.main.async { [weak self] in self?.recoverAfterConfigurationChange() }
         }
     }
 
@@ -162,7 +163,7 @@ final class AudioEngine {
         guard remaining > 0 else { return }
         player.scheduleSegment(file, startingFrame: startFrame, frameCount: AVAudioFrameCount(remaining),
                                at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            DispatchQueue.main.async { self?.segmentFinished(current) }
+            DispatchQueue.main.async { [weak self] in self?.segmentFinished(current) }
         }
     }
 
@@ -187,7 +188,10 @@ final class AudioEngine {
         do {
             try connectAndStart(format: file.processingFormat)
             seek(to: time)
-            if wasPlaying, !play() { throw CocoaError(.featureUnsupported) }
+            if wasPlaying {
+                guard play() else { throw CocoaError(.featureUnsupported) }
+                onRecovered?(time)
+            }
         } catch {
             stoppedTime = time
             onFailure?(error)

@@ -18,7 +18,22 @@ struct TrackTable: View {
 
     var body: some View {
         Group {
-            if isEmpty {
+            if model.showsQueryResults {
+                if !model.queryReady {
+                    ProgressView().controlSize(.small)
+                } else if model.queryResults.isEmpty {
+                    Text(languages.strings.noQueryResults).foregroundColor(theme.secondary)
+                } else {
+                    ScrollView(.vertical) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(model.queryResults.enumerated()), id: \.element.track.id) { index, entry in
+                                TrackRow(model: model, track: entry.track, number: index + 1, sourceID: entry.sourceID,
+                                         allowReorder: false, theme: theme) { model.playQuery(entry.track) }
+                            }
+                        }.padding(.vertical, 2)
+                    }
+                }
+            } else if isEmpty {
                 emptyState
             } else {
                 ScrollView(.vertical) {

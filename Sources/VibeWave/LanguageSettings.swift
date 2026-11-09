@@ -30,7 +30,7 @@ final class LanguageSettings: ObservableObject {
         observer = NotificationCenter.default.addObserver(forName: NSLocale.currentLocaleDidChangeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
             let languages = Locale.preferredLanguages
-            DispatchQueue.main.async { self?.systemLanguages = languages }
+            DispatchQueue.main.async { [weak self] in self?.systemLanguages = languages }
         }
     }
 }
