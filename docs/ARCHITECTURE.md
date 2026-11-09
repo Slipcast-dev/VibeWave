@@ -6,7 +6,8 @@
 - **AppKit:** жизненный цикл приложения, собственное окно без стандартной полосы macOS, системные меню, файловые диалоги, иконка и область перемещения окна.
 - **AVFoundation / AVAudioEngine:** декодирование MP3/FLAC (`AVAudioFile`), воспроизведение через `AVAudioPlayerNode`, 10-полосный эквалайзер `AVAudioUnitEQ`, баланс и громкость, уровни каналов для индикатора.
 - **Foundation / Codable:** JSON-библиотека, поиск файлов в папках, закладки файлов и атомарная запись.
-- Сторонних пакетов и сетевого доступа у приложения нет.
+- **URLSession, CryptoKit:** автообновление — `update.json` и архив с GitHub по HTTPS, проверка SHA-256 и подписи Ed25519.
+- Сторонних пакетов нет. Других сетевых запросов, кроме автообновления, нет.
 
 ## Модули и файлы
 
@@ -16,6 +17,7 @@ Sources/VibeWaveCore/
   MusicFiles.swift           поиск MP3/FLAC в папке (только обычные файлы)
   Localization.swift         языки интерфейса, выбор по системе, строки RU/EN
   Equalizer.swift            настройки эквалайзера, частоты полос, пресеты
+  Update.swift               версии, описание обновления update.json, подпись Ed25519
 Sources/VibeWave/
   VibeWaveApp.swift          точка входа, делегат приложения, меню
   RetroWindow.swift          borderless-окно, заголовок и его кнопки
@@ -25,6 +27,8 @@ Sources/VibeWave/
   PlayerModel+Playback.swift очередь воспроизведения, управление AudioEngine
   AudioEngine.swift          AVAudioEngine: плеер, эквалайзер, баланс, уровни, перемотка
   EqualizerPanel.swift       панель эквалайзера (popover кнопки EQ)
+  Updater.swift              автообновление: проверка, вопрос, загрузка, момент установки
+  UpdateInstaller.swift      проверка архива и приложения, процесс замены
   MediaScanner.swift         фоновое чтение файлов и папок, ImportJob, ImportProgress
   LanguageSettings.swift     текущий язык, сохранение выбора, смена языка системы
   ContentView.swift          окно: панель плеера, плейлист, библиотека, нижняя панель
@@ -123,6 +127,15 @@ AVAudioFile → AVAudioPlayerNode → AVAudioUnitEQ (10 полос) → AVAudioM
 Представления подписаны на `LanguageSettings.shared` и берут строки из `strings`. Модель формирует сообщения через `PlayerModel.strings` в момент ошибки. Ход импорта хранит вид операции (`ImportProgress.Kind`), а подпись строится при отрисовке, поэтому меняется вместе с языком. Главное меню приложения перестраивается при каждом изменении, подсказки кнопок заголовка обновляются через `RetroCaptionView.strings`.
 
 В `Info.plist` указаны `CFBundleLocalizations` (ru, en) и `CFBundleAllowMixedLocalizations`: системные диалоги (выбор файлов) следуют языку macOS.
+
+### Автообновление
+
+- `UpdateManifest`, `AppVersion`, `UpdateSignature` (ядро): описание обновления, сравнение версий, SHA-256 и Ed25519 через CryptoKit. `isOffered` пропускает только более новую версию для подходящей macOS по HTTPS.
+- `Updater` (`@MainActor`): создаётся делегатом приложения, только если `Info.plist` содержит `VWUpdateFeedURL` и `VWUpdatePublicKey`, а приложение лежит в записываемом месте (не из образа диска и не в App Translocation). Через 2 с после запуска читает `update.json`, при новой версии показывает `NSAlert` «Обновить / Позже», скачивает архив через `URLSession` и в фоне передаёт его `UpdateInstaller.prepare`.
+- Момент установки: при `model.current == nil` сразу; иначе подписка на `model.$current` ждёт остановки; `applicationWillTerminate` ставит подготовленное обновление без перезапуска.
+- `UpdateInstaller.prepare`: подпись и сумма архива → `ditto -x -k` → идентификатор и версия в `Info.plist` → `codesign --verify --strict`.
+- `UpdateInstaller.launchInstaller`: пишет скрипт `install-update.sh` и запускает `/bin/sh`, который ждёт завершения процесса VibeWave, заменяет приложение переименованием с откатом при ошибке и при необходимости открывает его снова. Без прав на запись замена выполняется через `osascript … with administrator privileges`.
+- Выпуск: `package-release.sh` собирает `scripts/tools/UpdateSigner.swift` вместе с ядром, проверяет, что ключ соответствует `VWUpdatePublicKey` в собранном приложении, и пишет `update.json`.
 
 ### Drag and drop
 

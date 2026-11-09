@@ -174,6 +174,14 @@ public struct Strings: Sendable {
     public let errorPlay: @Sendable (String, String) -> String
     public let errorDragRead: String
 
+    // Обновление
+    public let updateTitle: String
+    /// (новая версия, текущая версия)
+    public let updateMessage: @Sendable (String, String) -> String
+    public let updateNow: String
+    public let updateLater: String
+    public let updateVerificationFailed: @Sendable (String) -> String
+
     public static func `for`(_ language: AppLanguage) -> Strings {
         switch language {
         case .ru: return .ru
@@ -306,7 +314,12 @@ public struct Strings: Sendable {
         errorResume: "Не удалось продолжить воспроизведение.",
         errorAudioDevice: "Аудиоустройство недоступно.",
         errorPlay: { "Не удалось воспроизвести «\($0)»: \($1)" },
-        errorDragRead: "Не удалось прочитать перетаскиваемый трек."
+        errorDragRead: "Не удалось прочитать перетаскиваемый трек.",
+        updateTitle: "Доступно обновление VibeWave",
+        updateMessage: { "Вышла версия \($0), у вас установлена \($1). Обновление скачается в фоне, и VibeWave перезапустится сам, когда музыка не играет." },
+        updateNow: "Обновить",
+        updateLater: "Позже",
+        updateVerificationFailed: { "Обновление \($0) не прошло проверку и не установлено." }
     )
 
     public static let en = Strings(
@@ -434,6 +447,11 @@ public struct Strings: Sendable {
         errorResume: "Couldn’t resume playback.",
         errorAudioDevice: "The audio device is unavailable.",
         errorPlay: { "Couldn’t play “\($0)”: \($1)" },
-        errorDragRead: "Couldn’t read the dragged track."
+        errorDragRead: "Couldn’t read the dragged track.",
+        updateTitle: "A VibeWave update is available",
+        updateMessage: { "Version \($0) is out; you have \($1). The update downloads in the background, and VibeWave restarts on its own when no music is playing." },
+        updateNow: "Update",
+        updateLater: "Later",
+        updateVerificationFailed: { "Update \($0) failed verification and was not installed." }
     )
 }

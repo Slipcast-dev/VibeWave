@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Перерисовывает значки README в docs/assets/badges/ в стиле Windows 95.
 # Информационные значки берут данные из проекта (VERSION), значки звёзд и скачиваний —
-# из GitHub API через gh. Репозиторий приватный: внешние сервисы значков (shields.io)
-# его не видят, поэтому числа фиксируются в момент запуска скрипта (например, при релизе).
+# из GitHub API через gh; числа фиксируются в момент запуска скрипта (например, при релизе).
+# Готовые счётчики вроде shields.io не подходят: они суммируют все файлы релизов, включая
+# update.json, который каждая копия VibeWave читает при запуске, и SHA256SUMS.txt.
 # Без доступа к GitHub прежние значки звёзд и скачиваний остаются без изменений.
 set -euo pipefail
 cd "${0:A:h}/.."
@@ -39,7 +40,7 @@ badge swift.svg "Swift" "5.8+"
 
 if stars="$(gh api "repos/$repo" -q .stargazers_count 2>/dev/null)" &&
    downloads="$(gh api "repos/$repo/releases?per_page=100" \
-       -q '[.[].assets[] | select(.name | startswith("SHA256SUMS") | not) | .download_count] | add // 0' 2>/dev/null)"; then
+       -q '[.[].assets[] | select((.name | startswith("SHA256SUMS")) or .name == "update.json" | not) | .download_count] | add // 0' 2>/dev/null)"; then
     badge stars.svg "★ stars" "$stars"
     badge downloads.svg "downloads" "$downloads"
     print -r -- "Значки обновлены: версия $version, звёзд $stars, скачиваний $downloads"

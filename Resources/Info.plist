@@ -7,6 +7,9 @@
 <key>CFBundleDevelopmentRegion</key><string>ru</string>
 <key>CFBundleLocalizations</key><array><string>ru</string><string>en</string></array>
 <key>CFBundleAllowMixedLocalizations</key><true/>
+<key>VWUpdateFeedURL</key><string>https://github.com/Slipcast-dev/VibeWave/releases/latest/download/update.json</string>
+<key>VWUpdatePublicKey</key><string>xiSfMmVMoNiwWX1H0oblEtaUxuriJgYPotS/usYnUbA=</string>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><false/></dict>
 <key>CFBundleExecutable</key><string>VibeWave</string>
 <key>CFBundleIconFile</key><string>VibeWaveIcon.icns</string>
 <key>UTExportedTypeDeclarations</key><array><dict>

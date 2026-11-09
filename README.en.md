@@ -2,7 +2,7 @@
 
 ![VibeWave — a minimal MP3/FLAC player for macOS](docs/assets/vibewave-banner-en.svg)
 
-[![Version 1.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v1.0.0)
+[![Version 2.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Russian and English](docs/assets/badges/languages.svg)
@@ -12,9 +12,9 @@
 
 # VibeWave
 
-A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Windows 95–style interface, 10-band equalizer, Russian and English. No accounts, no network features, no third-party dependencies.
+A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the only network request is the update check on GitHub at launch.
 
-[Download v1.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v1.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Download v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Features
 
@@ -27,6 +27,7 @@ A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Wind
 - A temporary queue outside playlists: opening music never creates a playlist on its own.
 - **Russian and English interface:** the language follows the system; the **RU ▾ / EN ▾** button switches it without a restart.
 - One universal build for **Apple Silicon** and **Intel**.
+- **Auto-update:** at launch VibeWave checks for a new version, asks “Update” or “Later”, downloads and installs it in the background and restarts when no music is playing.
 - A custom retro window frame with working minimize, zoom and close buttons.
 
 ## Screenshots
@@ -44,14 +45,24 @@ Screenshots are rendered with test data, not a real music library.
 
 ![Release info: Apple Silicon and Intel, ad hoc signature](docs/assets/release-banner-en.svg)
 
-**[Release v1.0.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v1.0.0)** are available to members of this private repository. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
+**[Release v2.0.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
 
-- `VibeWave-1.0.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
-- `VibeWave-1.0.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
-- `VibeWave-1.0.0-macos-universal.zip` — the app in a ZIP archive.
+- `VibeWave-2.0.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
+- `VibeWave-2.0.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
+- `VibeWave-2.0.0-macos-universal.zip` — the app in a ZIP archive.
 - `SHA256SUMS.txt` — checksums. Verify in the download folder: `shasum -a 256 -c SHA256SUMS.txt`.
 
 The app has a local **ad hoc** signature and is not notarized by Apple. On first launch macOS shows a warning: allow it in System Settings → Privacy & Security. Do not turn off macOS protection entirely.
+
+Versions before 2.0 cannot update themselves: install 2.0 manually once, and from then on VibeWave keeps itself up to date.
+
+## Auto-update
+
+- Every time VibeWave starts, it reads `update.json` from the latest GitHub release in the background. Without a network connection nothing happens.
+- When a new version is out, it asks **“Update”** or **“Later”**. “Later” asks again on the next launch. There are no settings.
+- After “Update” the archive downloads in the background and is verified: SHA-256, the developer’s Ed25519 signature, bundle identifier, version and code signature. A forged update is never installed.
+- If nothing is playing, VibeWave replaces itself and restarts right away. If music is playing, it waits until playback stops; if you quit first, the new version is installed on quit.
+- Updating works when VibeWave lives in Applications or another folder on disk; it is off when the app runs straight from the disk image. If you cannot write to the app’s folder, macOS asks for an administrator password.
 
 ## Building from source
 
@@ -70,7 +81,7 @@ Installers from the finished build:
 zsh scripts/package-release.sh
 ```
 
-The DMG, PKG, ZIP and `SHA256SUMS.txt` appear in `.release/v<version>-universal/`. Installing without Gatekeeper warnings requires a Developer ID and Apple notarization. The local build runs without App Sandbox; macOS system protection stays on.
+The DMG, PKG, ZIP, `SHA256SUMS.txt` and a signed `update.json` appear in `.release/v<version>-universal/`. `update.json` needs the update signing key `~/.config/vibewave/update-signing-key`, which is never stored in the repository. Installing without Gatekeeper warnings requires a Developer ID and Apple notarization. The local build runs without App Sandbox; macOS system protection stays on.
 
 ## Usage
 
@@ -107,7 +118,7 @@ swift test
 
 Regression checks use a temporary library and test audio files and never touch your music or playlists. `VIBEWAVE_CHECK_ARCH=x86_64` checks the Intel slice on Apple Silicon through Rosetta.
 
-The stars and downloads badges are refreshed with `zsh scripts/update-badges.sh`. The repository is private, so external badge services cannot see it; the numbers are captured when the script runs.
+The stars and downloads badges are refreshed with `zsh scripts/update-badges.sh`; the numbers are taken from GitHub when the script runs. Downloads count installers and updates, not `update.json` or `SHA256SUMS.txt`.
 
 ## Project layout
 
@@ -132,4 +143,4 @@ dist/VibeWave.app              built app, not tracked by Git
 
 GitHub Actions on an Intel macOS runner runs the core tests, the universal build, signature and slice checks, regression checks and installer packaging (nothing is published). Actions are pinned by SHA and the workflow can only read the source. Sound, gestures and Dock behavior are checked locally.
 
-No open-source license has been chosen yet; this project is not declared open source. The repository is private: [Slipcast-dev/VibeWave](https://github.com/Slipcast-dev/VibeWave).
+The repository is public: [Slipcast-dev/VibeWave](https://github.com/Slipcast-dev/VibeWave). No open-source license has been chosen yet: you can read the code, but no rights to use or modify it are granted.

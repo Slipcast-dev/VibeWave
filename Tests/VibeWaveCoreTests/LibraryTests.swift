@@ -155,6 +155,62 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(Strings.en.eqDecibels(-0.2), "0 dB")
     }
 
+    func testAppVersionOrdering() {
+        XCTAssertLessThan(AppVersion("1.0.0")!, AppVersion("2.0.0")!)
+        XCTAssertLessThan(AppVersion("2.0")!, AppVersion("2.0.1")!)
+        XCTAssertLessThan(AppVersion("1.9.9")!, AppVersion("1.10.0")!, "Числа, а не строки")
+        XCTAssertEqual(AppVersion("2.0")!, AppVersion("2.0.0")!)
+        XCTAssertEqual(AppVersion("v2.0.0-beta")!, AppVersion("2.0.0")!)
+        XCTAssertNil(AppVersion("two"))
+        XCTAssertNil(AppVersion(""))
+        XCTAssertNil(AppVersion("1..2"))
+        XCTAssertEqual(AppVersion("1.2.3")?.description, "1.2.3")
+    }
+
+    func testUpdateManifestIsOfferedOnlyForNewerCompatibleHTTPS() throws {
+        let macOS13 = OperatingSystemVersion(majorVersion: 13, minorVersion: 0, patchVersion: 0)
+        let manifest = UpdateManifest(version: "2.0.0", url: URL(string: "https://github.com/a/b/releases/download/v2.0.0/a.zip")!,
+                                      sha256: "00", signature: "AA==", notes: ["ru": "Привет", "en": "Hello"])
+        XCTAssertTrue(manifest.isOffered(currentVersion: "1.0.0", systemVersion: macOS13))
+        XCTAssertFalse(manifest.isOffered(currentVersion: "2.0.0", systemVersion: macOS13), "Та же версия")
+        XCTAssertFalse(manifest.isOffered(currentVersion: "2.1.0", systemVersion: macOS13), "Откат не предлагается")
+        var newerSystem = manifest
+        newerSystem.minimumSystemVersion = "14.0"
+        XCTAssertFalse(newerSystem.isOffered(currentVersion: "1.0.0", systemVersion: macOS13), "Система слишком старая")
+        var plainHTTP = manifest
+        plainHTTP.url = URL(string: "http://example.com/a.zip")!
+        XCTAssertFalse(plainHTTP.isOffered(currentVersion: "1.0.0", systemVersion: macOS13), "Только HTTPS")
+        XCTAssertEqual(manifest.notes(for: .ru), "Привет")
+        let decoded = try JSONDecoder().decode(UpdateManifest.self, from: Data(
+            #"{"version":"2.0.0","url":"https://x/y.zip","sha256":"ab","signature":"cd"}"#.utf8))
+        XCTAssertEqual(decoded.minimumSystemVersion, "13.0")
+        XCTAssertNil(decoded.notes(for: .en))
+    }
+
+    func testUpdateSignatureRejectsTampering() throws {
+        let pair = UpdateSignature.generateKeyPair()
+        XCTAssertEqual(try UpdateSignature.publicKey(forPrivateKey: pair.privateKey), pair.publicKey)
+        let archive = Data("VibeWave update".utf8)
+        let manifest = UpdateManifest(version: "2.0.0", url: URL(string: "https://x/y.zip")!,
+                                      sha256: UpdateSignature.sha256Hex(archive),
+                                      signature: try UpdateSignature.sign(archive, privateKey: pair.privateKey))
+        XCTAssertNoThrow(try UpdateSignature.verify(archive, manifest: manifest, publicKey: pair.publicKey))
+        XCTAssertThrowsError(try UpdateSignature.verify(Data("tampered".utf8), manifest: manifest, publicKey: pair.publicKey)) {
+            XCTAssertEqual($0 as? UpdateSignature.Failure, .checksumMismatch)
+        }
+        var forged = manifest
+        forged.sha256 = UpdateSignature.sha256Hex(Data("tampered".utf8))
+        XCTAssertThrowsError(try UpdateSignature.verify(Data("tampered".utf8), manifest: forged, publicKey: pair.publicKey)) {
+            XCTAssertEqual($0 as? UpdateSignature.Failure, .signatureMismatch, "Подменённый архив с пересчитанной суммой")
+        }
+        let stranger = UpdateSignature.generateKeyPair()
+        XCTAssertThrowsError(try UpdateSignature.verify(archive, manifest: manifest, publicKey: stranger.publicKey)) {
+            XCTAssertEqual($0 as? UpdateSignature.Failure, .signatureMismatch, "Чужой ключ")
+        }
+        XCTAssertThrowsError(try UpdateSignature.verify(archive, manifest: manifest, publicKey: "not-a-key"))
+        XCTAssertEqual(UpdateSignature.sha256Hex(Data("abc".utf8)), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
     func testTimeLabels() {
         XCTAssertEqual(timeLabel(84), "1:24")
         XCTAssertEqual(timeLabel(-10), "0:00")

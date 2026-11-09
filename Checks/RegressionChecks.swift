@@ -335,9 +335,95 @@ struct RegressionChecks {
         precondition(Set(caption.subviews.compactMap { ($0 as? NSButton)?.toolTip }) == ["Свернуть", "Развернуть или восстановить", "Закрыть окно"],
                      "Подсказки кнопок окна переключаются")
         print("PASS: Russian/English switching for model messages, library sections, import progress, caption buttons")
+        try checkUpdateInstallation(in: support.appendingPathComponent("UpdateCheck", isDirectory: true))
         print("PASS: real MP3/FLAC import and valid app icon")
         print("PASS: migration, reorder up/down/end, cross-playlist move, duplicates, persistence, payload, formats")
     }
+    /// Сквозная проверка автообновления на тестовом приложении: подписанный архив проходит проверки,
+    /// подменённый или чужой — нет; установщик ждёт завершения процесса и заменяет приложение на диске.
+    static func checkUpdateInstallation(in root: URL) throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        precondition(Updater.Configuration.fromMainBundle() == nil, "Вне .app автообновление выключено")
+        func makeApp(version: String, identifier: String = "local.vibewave.player", in folder: URL) throws -> URL {
+            let app = folder.appendingPathComponent("VibeWave.app", isDirectory: true)
+            try manager.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+            try manager.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: app.appendingPathComponent("Contents/MacOS/VibeWave"))
+            let info: NSDictionary = ["CFBundleIdentifier": identifier, "CFBundleShortVersionString": version,
+                                      "CFBundleExecutable": "VibeWave", "CFBundlePackageType": "APPL"]
+            precondition(info.write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true))
+            precondition(shell("/usr/bin/codesign", ["--force", "--sign", "-", app.path]), "Подпись тестового приложения")
+            return app
+        }
+        func makeArchive(_ app: URL, name: String) -> URL {
+            let archive = root.appendingPathComponent(name)
+            precondition(shell("/usr/bin/ditto", ["-c", "-k", "--keepParent", app.path, archive.path]))
+            return archive
+        }
+        let keys = UpdateSignature.generateKeyPair()
+        func manifest(for archive: URL, version: String, key: String = keys.privateKey) throws -> UpdateManifest {
+            let data = try Data(contentsOf: archive)
+            return UpdateManifest(version: version, url: archive, sha256: UpdateSignature.sha256Hex(data),
+                                  signature: try UpdateSignature.sign(data, privateKey: key))
+        }
+        let installed = try makeApp(version: "1.0.0", in: root.appendingPathComponent("Applications", isDirectory: true))
+        let good = makeArchive(try makeApp(version: "2.0.0", in: root.appendingPathComponent("build", isDirectory: true)), name: "good.zip")
+        let goodManifest = try manifest(for: good, version: "2.0.0")
+        precondition(goodManifest.isOffered(currentVersion: "1.0.0", systemVersion: ProcessInfo.processInfo.operatingSystemVersion))
+
+        func rejects(_ archive: URL, _ manifest: UpdateManifest, publicKey: String = keys.publicKey) -> Bool {
+            let work = root.appendingPathComponent("work-\(UUID().uuidString)")
+            return (try? UpdateInstaller.prepare(archive: archive, manifest: manifest, publicKey: publicKey,
+                                                 bundleIdentifier: "local.vibewave.player", workDirectory: work)) == nil
+        }
+        precondition(rejects(good, goodManifest, publicKey: UpdateSignature.generateKeyPair().publicKey), "Чужой ключ отклоняется")
+        var tampered = try Data(contentsOf: good)
+        tampered[tampered.count / 2] ^= 0xFF
+        let tamperedURL = root.appendingPathComponent("tampered.zip")
+        try tampered.write(to: tamperedURL)
+        precondition(rejects(tamperedURL, goodManifest), "Подменённый архив отклоняется")
+        let foreign = makeArchive(try makeApp(version: "2.0.0", identifier: "com.example.other",
+                                              in: root.appendingPathComponent("foreign", isDirectory: true)), name: "foreign.zip")
+        let foreignManifest = try manifest(for: foreign, version: "2.0.0")
+        precondition(rejects(foreign, foreignManifest), "Чужое приложение отклоняется")
+        let wrongVersion = try manifest(for: good, version: "3.0.0")
+        precondition(rejects(good, wrongVersion), "Версия внутри должна совпадать с обещанной")
+
+        let work = root.appendingPathComponent("work", isDirectory: true)
+        let prepared = try UpdateInstaller.prepare(archive: good, manifest: goodManifest, publicKey: keys.publicKey,
+                                                   bundleIdentifier: "local.vibewave.player", workDirectory: work)
+        // Установщик ждёт завершения «приложения» (здесь — короткого процесса) и только потом меняет файлы.
+        let running = Process()
+        running.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        running.arguments = ["0.5"]
+        try running.run()
+        let installer = try UpdateInstaller.launchInstaller(newApp: prepared, target: installed, waitingFor: running.processIdentifier,
+                                                            relaunch: false, workDirectory: work)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        precondition(installer.isRunning, "Установщик ждёт выхода приложения")
+        precondition(NSDictionary(contentsOf: installed.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String == "1.0.0")
+        running.waitUntilExit()
+        waitFor { !installer.isRunning }
+        precondition(installer.terminationStatus == 0, "Установщик завершился без ошибок")
+        let info = NSDictionary(contentsOf: installed.appendingPathComponent("Contents/Info.plist"))
+        precondition(info?["CFBundleShortVersionString"] as? String == "2.0.0", "Приложение заменено новой версией")
+        precondition(shell("/usr/bin/codesign", ["--verify", "--strict", installed.path]), "Подпись нового приложения цела")
+        precondition(!manager.fileExists(atPath: installed.path + ".vibewave-previous"), "Прежняя версия убрана")
+        print("PASS: auto-update signature checks (foreign key, tampering, other app, version) and background install after exit")
+    }
+
+    @discardableResult
+    static func shell(_ tool: String, _ arguments: [String]) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
     static func findCaption(in view: NSView) -> RetroCaptionView? {
         if let caption = view as? RetroCaptionView { return caption }
         for child in view.subviews {

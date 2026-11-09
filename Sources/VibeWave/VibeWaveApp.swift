@@ -19,6 +19,7 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     let model = PlayerModel()
     private var playerWindow: RetroWindowController?
     private var languageObserver: AnyCancellable?
+    private var updater: Updater?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installIcon()
@@ -28,6 +29,11 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.installMenu() }
         showPlayer()
+        // Автообновление работает только у собранного приложения с ключом проверки в Info.plist.
+        if let configuration = Updater.Configuration.fromMainBundle() {
+            updater = Updater(model: model, configuration: configuration)
+            updater?.checkOnLaunch()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -40,7 +46,10 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         showPlayer()
     }
 
-    func applicationWillTerminate(_ notification: Notification) { model.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        model.stop()
+        updater?.installOnTerminate()
+    }
 
     func installIcon() {
         guard let url = Bundle.main.url(forResource: "VibeWaveIcon", withExtension: "icns"),
