@@ -60,6 +60,14 @@ final class PlayerModel: NSObject, ObservableObject {
     @Published var balance: Double = 0 {
         didSet { engine.pan = Float(balance) }
     }
+    /// Эквалайзер применяется сразу, в том числе к играющему треку, и сохраняется в настройках.
+    @Published var equalizer = PlayerModel.loadEqualizer() {
+        didSet {
+            engine.equalizer = equalizer
+            if let data = try? JSONEncoder().encode(equalizer) { UserDefaults.standard.set(data, forKey: Self.equalizerKey) }
+        }
+    }
+    static let equalizerKey = "equalizer"
     /// Сведения о текущем файле для ЖК-панели.
     @Published var currentBitrate = 0
     @Published var currentSampleRate = 0.0
@@ -89,8 +97,9 @@ final class PlayerModel: NSObject, ObservableObject {
         engine = AudioEngine()
         super.init()
         engine.volume = Float(volume)
-        engine.onFinish = { [weak self] flag in self?.trackFinished(successfully: flag) }
-        engine.onDecodeError = { [weak self] error in self?.decodeFailed(error) }
+        engine.equalizer = equalizer
+        engine.onFinish = { [weak self] in self?.next() }
+        engine.onFailure = { [weak self] _ in self?.playbackLost() }
         do {
             // При первом запуске нового имени читаем прежнюю библиотеку без её удаления.
             if !FileManager.default.fileExists(atPath: store.url.path) {
@@ -106,7 +115,7 @@ final class PlayerModel: NSObject, ObservableObject {
             selectedID = nil
         } catch {
             canSave = false
-            self.error = "Не удалось прочитать библиотеку. Файл сохранён без изменений. \(error.localizedDescription)"
+            self.error = strings.errorLibraryRead(error.localizedDescription)
         }
     }
 
@@ -115,15 +124,24 @@ final class PlayerModel: NSObject, ObservableObject {
         // Временные треки вне плейлистов не сохраняются, поэтому их нет и в порядке.
         let persistent = Set(playlists.flatMap(\.tracks).map(\.id) + folders.flatMap(\.tracks).map(\.id))
         do { try store.save(LibrarySnapshot(playlists: playlists, folders: folders, order: libraryOrder.filter(persistent.contains))) }
-        catch { self.error = "Не удалось сохранить плейлисты: \(error.localizedDescription)" }
+        catch { self.error = strings.errorLibrarySave(error.localizedDescription) }
     }
+
+    private static func loadEqualizer() -> EqualizerSettings {
+        guard let data = UserDefaults.standard.data(forKey: equalizerKey),
+              let settings = try? JSONDecoder().decode(EqualizerSettings.self, from: data) else { return EqualizerSettings() }
+        return settings
+    }
+
+    /// Строки на текущем языке интерфейса для сообщений и диалогов модели.
+    var strings: Strings { LanguageSettings.shared.strings }
 
     // MARK: Выбор и производные списки
 
     var selected: Playlist? { playlists.first { $0.id == selectedID } }
     var selectedFolder: MusicFolder? { folders.first { $0.id == selectedID } }
     var isLibrarySelected: Bool { selectedID == nil || (selected == nil && selectedFolder == nil) }
-    var selectedTitle: String { selected?.name ?? selectedFolder?.name ?? "Вся музыка" }
+    var selectedTitle: String { selected?.name ?? selectedFolder?.name ?? strings.allMusic }
     var visibleTracks: [Track] {
         if let playlist = selected { return playlist.tracks }
         if let folder = selectedFolder { return folder.tracks }
@@ -152,7 +170,7 @@ final class PlayerModel: NSObject, ObservableObject {
     var librarySections: [LibrarySection] {
         playlists.map { LibrarySection(sourceID: $0.id, kind: .playlist, title: $0.name, tracks: $0.tracks) }
             + folders.map { LibrarySection(sourceID: $0.id, kind: .folder, title: $0.name, tracks: $0.tracks) }
-            + [LibrarySection(sourceID: nil, kind: .loose, title: "Вне плейлистов", tracks: openTracks)]
+            + [LibrarySection(sourceID: nil, kind: .loose, title: strings.outsidePlaylists, tracks: openTracks)]
     }
 
     /// Очередь раздела «Вся музыка» совпадает с тем, что видно на экране.

@@ -53,7 +53,7 @@ enum DropReceiver {
         if let item = providers.first(where: isInternal) {
             item.loadDataRepresentation(forTypeIdentifier: UTType.vibeWaveTrack.identifier) { data, _ in
                 guard let data = data, let payload = try? JSONDecoder().decode(TrackDragPayload.self, from: data) else {
-                    DispatchQueue.main.async { model.error = "Не удалось прочитать перетаскиваемый трек." }
+                    DispatchQueue.main.async { model.error = model.strings.errorDragRead }
                     return
                 }
                 DispatchQueue.main.async {

@@ -8,6 +8,7 @@ struct TrackTable: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
     @State private var endTargeted = false
+    @ObservedObject private var languages = LanguageSettings.shared
 
     private var library: Bool { model.isLibrarySelected }
     private var flatLibrary: Bool { library && !model.groupByPlaylists }
@@ -70,9 +71,10 @@ struct TrackTable: View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: "music.note").font(.system(size: 24)).foregroundColor(theme.secondary)
-            Text(model.selected != nil ? "Добавьте музыку в плейлист" : model.selectedFolder != nil ? "В папке нет MP3 и FLAC" : "Добавьте музыку")
+            let s = languages.strings
+            Text(model.selected != nil ? s.emptyPlaylist : model.selectedFolder != nil ? s.emptyFolder : s.emptyLibrary)
                 .fontWeight(.bold)
-            Text("Перетащите сюда файлы MP3 и FLAC или папку с музыкой").foregroundColor(theme.secondary)
+            Text(s.emptyHint).foregroundColor(theme.secondary)
                 .multilineTextAlignment(.center)
             Spacer()
         }.padding(.horizontal, 10).frame(maxWidth: .infinity, maxHeight: .infinity)

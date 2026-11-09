@@ -106,6 +106,55 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(folder.tracks, [a, c])
     }
 
+    func testLanguageFollowsSystemPreferences() {
+        XCTAssertEqual(AppLanguage.preferred(from: ["ru-RU", "en-US"]), .ru)
+        XCTAssertEqual(AppLanguage.preferred(from: ["en-GB", "ru"]), .en)
+        XCTAssertEqual(AppLanguage.preferred(from: ["de-DE", "ru_RU"]), .ru, "Первый поддерживаемый язык из списка")
+        XCTAssertEqual(AppLanguage.preferred(from: ["uk-UA", "fr"]), .en, "Без русского и английского — английский")
+        XCTAssertEqual(AppLanguage.preferred(from: []), .en)
+        XCTAssertEqual(LanguagePreference.system.resolve(systemLanguages: ["ru-RU"]), .ru)
+        XCTAssertEqual(LanguagePreference.en.resolve(systemLanguages: ["ru-RU"]), .en)
+        XCTAssertEqual(LanguagePreference.ru.resolve(systemLanguages: ["en-US"]), .ru)
+    }
+
+    func testStringsForBothLanguages() {
+        XCTAssertEqual(Strings.for(.ru).allMusic, "Вся музыка")
+        XCTAssertEqual(Strings.for(.en).allMusic, "All Music")
+        XCTAssertEqual(Strings.ru.progressCount("Чтение файлов", 3, 10), "Чтение файлов: 3 из 10")
+        XCTAssertEqual(Strings.en.progressCount("Reading files", 3, 10), "Reading files: 3 of 10")
+        XCTAssertEqual(Strings.ru.errorCouldNotOpen(["a.mp3"], 0), "Не удалось открыть: a.mp3")
+        XCTAssertEqual(Strings.en.errorCouldNotOpen(["a.mp3", "b.flac"], 4), "Couldn’t open: a.mp3, b.flac and 4 more")
+        XCTAssertEqual(Strings.en.languageSystem(AppLanguage.ru.nativeName), "System (Русский)")
+        XCTAssertEqual(AppLanguage.en.code, "EN")
+    }
+
+    func testEqualizerSettingsStayInRange() throws {
+        var settings = EqualizerSettings(enabled: true, preamp: 40, gains: [20, -20, 3])
+        XCTAssertEqual(settings.preamp, 12)
+        XCTAssertEqual(settings.gains, [12, -12, 3, 0, 0, 0, 0, 0, 0, 0], "Ровно 10 полос в пределах ±12 дБ")
+        settings.gains[4] = -99
+        XCTAssertEqual(settings.gains[4], -12)
+        settings.gains = Array(repeating: 1, count: 14)
+        XCTAssertEqual(settings.gains.count, EqualizerSettings.frequencies.count)
+        XCTAssertNil(settings.preset)
+        XCTAssertEqual(EqualizerSettings(preset: .rock).preset, .rock)
+        XCTAssertEqual(EqualizerSettings().preset, .flat)
+        XCTAssertFalse(EqualizerSettings().enabled)
+        for preset in EqualizerPreset.allCases {
+            XCTAssertEqual(preset.gains.count, EqualizerSettings.frequencies.count, preset.rawValue)
+            XCTAssertTrue(preset.gains.allSatisfy(EqualizerSettings.gainRange.contains), preset.rawValue)
+            XCTAssertFalse(Strings.ru.eqPresetName(preset).isEmpty)
+            XCTAssertNotEqual(Strings.ru.eqPresetName(preset), Strings.en.eqPresetName(preset), preset.rawValue)
+        }
+        // Сохранённые настройки читаются и с неполными или испорченными значениями.
+        let restored = try JSONDecoder().decode(EqualizerSettings.self, from: Data(#"{"gains":[3,99]}"#.utf8))
+        XCTAssertEqual(restored, EqualizerSettings(enabled: false, preamp: 0, gains: [3, 12]))
+        let roundTrip = try JSONDecoder().decode(EqualizerSettings.self, from: JSONEncoder().encode(EqualizerSettings(preset: .vocal)))
+        XCTAssertEqual(roundTrip, EqualizerSettings(preset: .vocal))
+        XCTAssertEqual(Strings.ru.eqDecibels(3), "+3 дБ")
+        XCTAssertEqual(Strings.en.eqDecibels(-0.2), "0 dB")
+    }
+
     func testTimeLabels() {
         XCTAssertEqual(timeLabel(84), "1:24")
         XCTAssertEqual(timeLabel(-10), "0:00")

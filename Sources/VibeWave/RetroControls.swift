@@ -110,7 +110,7 @@ struct RetroSlider: View {
             if direction == .right || direction == .up { adjust(1) }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityValue("\(Int(fraction * 100)) процентов")
+        .accessibilityValue(LanguageSettings.shared.strings.percent(Int(fraction * 100)))
         .accessibilityAdjustableAction { direction in
             guard enabled else { return }
             switch direction {
@@ -123,6 +123,71 @@ struct RetroSlider: View {
     private func adjust(_ direction: Double) {
         let step = (range.upperBound - range.lowerBound) / 100
         value = min(range.upperBound, max(range.lowerBound, value + direction * step))
+    }
+}
+
+/// Вертикальный ползунок (полосы эквалайзера): бегунок в стиле Windows 95, риска нуля,
+/// двойной щелчок возвращает к нулю. Мышь, стрелки и действия доступности.
+struct RetroVerticalSlider: View {
+    @Binding var value: Double
+    var range: ClosedRange<Double>
+    var step: Double = 1
+    let theme: PlayerTheme
+    /// Значение для VoiceOver, например «+3 дБ».
+    var valueText: (Double) -> String = { String(format: "%.0f", $0) }
+    @Environment(\.isEnabled) private var enabled
+
+    private var fraction: Double {
+        guard value.isFinite, range.upperBound > range.lowerBound else { return 0 }
+        return min(1, max(0, (value - range.lowerBound) / (range.upperBound - range.lowerBound)))
+    }
+    private var zero: Double { range.contains(0) ? 0 : range.lowerBound }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let thumb: CGFloat = 12
+            let travel = max(1, geometry.size.height - thumb)
+            let zeroFraction = (zero - range.lowerBound) / (range.upperBound - range.lowerBound)
+            ZStack(alignment: .top) {
+                Rectangle().fill(theme.shadow).frame(width: geometry.size.width, height: 1)
+                    .offset(y: thumb / 2 + travel * (1 - zeroFraction))
+                Rectangle().fill(theme.panel).frame(width: 5).retroBevel(theme, sunken: true)
+                    .padding(.vertical, thumb / 2 - 2)
+                Rectangle().fill(theme.panel).frame(width: geometry.size.width - 2, height: thumb)
+                    .retroBevel(theme)
+                    .overlay(Rectangle().fill(theme.shadow).frame(width: geometry.size.width - 10, height: 1))
+                    .offset(y: travel * (1 - fraction))
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { event in
+                guard enabled else { return }
+                let progress = 1 - min(1, max(0, (event.location.y - thumb / 2) / travel))
+                set(range.lowerBound + progress * (range.upperBound - range.lowerBound))
+            })
+            .simultaneousGesture(TapGesture(count: 2).onEnded { if enabled { set(zero) } })
+        }
+        .opacity(enabled ? 1 : 0.5)
+        .focusable(enabled)
+        .onMoveCommand { direction in
+            guard enabled else { return }
+            if direction == .down || direction == .left { set(value - step) }
+            if direction == .up || direction == .right { set(value + step) }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue(valueText(value))
+        .accessibilityAdjustableAction { direction in
+            guard enabled else { return }
+            switch direction {
+            case .increment: set(value + step)
+            case .decrement: set(value - step)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func set(_ newValue: Double) {
+        value = min(range.upperBound, max(range.lowerBound, newValue))
     }
 }
 
@@ -183,7 +248,7 @@ private final class ClosureMenuItem: NSMenuItem {
         state = checked ? .on : .off
     }
 
-    required init(coder: NSCoder) { fatalError("init(coder:) не используется") }
+    required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     @objc private func run() { handler() }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// AppKit управляет единственным окном без стандартной полосы macOS;
 /// интерфейс внутри окна остаётся SwiftUI.
@@ -17,10 +18,15 @@ struct VibeWaveApp {
 final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let model = PlayerModel()
     private var playerWindow: RetroWindowController?
+    private var languageObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installIcon()
         installMenu()
+        // objectWillChange приходит до изменения: меню строится на следующем проходе цикла.
+        languageObserver = LanguageSettings.shared.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.installMenu() }
         showPlayer()
     }
 
@@ -51,36 +57,38 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     }
 
     /// Стандартные меню сохраняют привычные сочетания клавиш и редактирование названий.
+    /// Меню перестраивается при смене языка интерфейса.
     private func installMenu() {
+        let s = LanguageSettings.shared.strings
         let main = NSMenu()
         let appMenu = NSMenu(title: "VibeWave")
-        appMenu.addItem(withTitle: "О VibeWave", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: s.menuAbout, action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Завершить VibeWave", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: s.menuQuit, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let appItem = NSMenuItem(); appItem.submenu = appMenu; main.addItem(appItem)
 
-        let file = NSMenu(title: "Файл")
-        let add = file.addItem(withTitle: "Добавить файлы…", action: #selector(addFiles), keyEquivalent: "o")
+        let file = NSMenu(title: s.menuFile)
+        let add = file.addItem(withTitle: s.menuAddFiles, action: #selector(addFiles), keyEquivalent: "o")
         add.target = self
-        let close = file.addItem(withTitle: "Закрыть окно", action: #selector(closePlayer), keyEquivalent: "w")
+        let close = file.addItem(withTitle: s.closeWindow, action: #selector(closePlayer), keyEquivalent: "w")
         close.target = self
-        let fileItem = NSMenuItem(title: "Файл", action: nil, keyEquivalent: ""); fileItem.submenu = file; main.addItem(fileItem)
+        let fileItem = NSMenuItem(title: s.menuFile, action: nil, keyEquivalent: ""); fileItem.submenu = file; main.addItem(fileItem)
 
-        let edit = NSMenu(title: "Правка")
-        edit.addItem(withTitle: "Отменить", action: Selector(("undo:")), keyEquivalent: "z")
+        let edit = NSMenu(title: s.menuEdit)
+        edit.addItem(withTitle: s.menuUndo, action: Selector(("undo:")), keyEquivalent: "z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Вырезать", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Копировать", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Вставить", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Выделить всё", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        let editItem = NSMenuItem(title: "Правка", action: nil, keyEquivalent: ""); editItem.submenu = edit; main.addItem(editItem)
+        edit.addItem(withTitle: s.menuCut, action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: s.menuCopy, action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: s.menuPaste, action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: s.menuSelectAll, action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editItem = NSMenuItem(title: s.menuEdit, action: nil, keyEquivalent: ""); editItem.submenu = edit; main.addItem(editItem)
 
-        let windowMenu = NSMenu(title: "Окно")
-        let minimize = windowMenu.addItem(withTitle: "Свернуть", action: #selector(minimizePlayer), keyEquivalent: "m")
+        let windowMenu = NSMenu(title: s.menuWindow)
+        let minimize = windowMenu.addItem(withTitle: s.minimize, action: #selector(minimizePlayer), keyEquivalent: "m")
         minimize.target = self
-        let zoom = windowMenu.addItem(withTitle: "Развернуть или восстановить", action: #selector(zoomPlayer), keyEquivalent: "")
+        let zoom = windowMenu.addItem(withTitle: s.zoom, action: #selector(zoomPlayer), keyEquivalent: "")
         zoom.target = self
-        let windowItem = NSMenuItem(title: "Окно", action: nil, keyEquivalent: ""); windowItem.submenu = windowMenu; main.addItem(windowItem)
+        let windowItem = NSMenuItem(title: s.menuWindow, action: nil, keyEquivalent: ""); windowItem.submenu = windowMenu; main.addItem(windowItem)
         NSApp.mainMenu = main
         NSApp.windowsMenu = windowMenu
     }

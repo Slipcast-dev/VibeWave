@@ -2,16 +2,29 @@ import AVFoundation
 import Foundation
 import VibeWaveCore
 
-/// Состояние фоновой задачи импорта для интерфейса.
+/// Состояние фоновой задачи импорта для интерфейса. Хранит вид операции, а не текст:
+/// подпись строится на текущем языке и меняется вместе с ним.
 struct ImportProgress: Equatable {
-    var title: String
+    enum Kind: Equatable {
+        case files
+        case folder(String)
+        case folders(Int)
+    }
+
+    var kind: Kind
     var done = 0
     /// nil — число файлов ещё неизвестно (идёт поиск в папке).
     var total: Int?
 
-    var label: String {
-        guard let total = total else { return "\(title): поиск…" }
-        return "\(title): \(done) из \(total)"
+    func label(_ strings: Strings) -> String {
+        let title: String
+        switch kind {
+        case .files: title = strings.progressFiles
+        case .folder(let name): title = strings.progressFolder(name)
+        case .folders(let count): title = strings.progressFolders(count)
+        }
+        guard let total = total else { return strings.progressSearching(title) }
+        return strings.progressCount(title, done, total)
     }
 }
 
@@ -107,16 +120,17 @@ enum MediaScanner {
         return FolderScan(files: files, added: try readTracks(fresh, job: job, progress: progress))
     }
 
-    /// Проверка файла тем же декодером, что и при воспроизведении.
+    /// Проверка файла тем же декодером (AVAudioFile), что и при воспроизведении.
     private static func probe(_ url: URL) -> Result<Track, Error> {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let audio = try AVAudioPlayer(contentsOf: url)
+            let audio = try AVAudioFile(forReading: url)
+            let rate = audio.processingFormat.sampleRate
             // В локальной сборке без App Sandbox app-scope key может отсутствовать:
             // необязательная закладка не должна отклонять исправную музыку.
             let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-            return .success(Track(url: url, duration: audio.duration, bookmark: bookmark))
+            return .success(Track(url: url, duration: rate > 0 ? Double(audio.length) / rate : 0, bookmark: bookmark))
         } catch { return .failure(error) }
     }
 

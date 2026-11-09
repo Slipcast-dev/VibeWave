@@ -48,7 +48,7 @@ extension PlayerModel {
             timer = nil
             playing = false
         } else {
-            guard engine.play() else { error = "Не удалось продолжить воспроизведение."; return }
+            guard engine.play() else { error = strings.errorResume; return }
             playing = true
             startTimer()
         }
@@ -56,7 +56,7 @@ extension PlayerModel {
 
     func seek(_ value: Double) {
         let target = max(0, min(value, duration))
-        engine.currentTime = target
+        engine.seek(to: target)
         position = target
     }
 
@@ -89,14 +89,10 @@ extension PlayerModel {
 
     // MARK: События AudioEngine
 
-    func trackFinished(successfully flag: Bool) {
-        if flag { next() }
-        else { stop(); error = "Файл не удалось воспроизвести до конца." }
-    }
-
-    func decodeFailed(_ error: Error?) {
+    /// Аудиоустройство пропало, и продолжить воспроизведение не удалось.
+    func playbackLost() {
         stop()
-        self.error = "Ошибка декодирования: \(error?.localizedDescription ?? "повреждённый файл")"
+        error = strings.errorAudioDevice
     }
 
     // MARK: Внутреннее
@@ -109,14 +105,14 @@ extension PlayerModel {
             currentBitrate = info.bitrate
             currentSampleRate = info.sampleRate
             currentChannels = info.channels
-            guard engine.play() else { throw NSError(domain: "VibeWave", code: 1, userInfo: [NSLocalizedDescriptionKey: "Аудиоустройство недоступно."]) }
+            guard engine.play() else { throw NSError(domain: "VibeWave", code: 1, userInfo: [NSLocalizedDescriptionKey: strings.errorAudioDevice]) }
             current = track
             duration = info.duration
             playing = true
             startTimer()
         } catch {
             stop()
-            self.error = "Не удалось воспроизвести «\(track.title)»: \(error.localizedDescription)"
+            self.error = strings.errorPlay(track.title, error.localizedDescription)
         }
     }
 

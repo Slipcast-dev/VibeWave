@@ -15,6 +15,7 @@ struct TrackRow: View {
     let theme: PlayerTheme
     let play: () -> Void
     @State private var targeted = false
+    @ObservedObject private var languages = LanguageSettings.shared
 
     var body: some View {
         let isCurrent = model.current?.id == track.id
@@ -38,10 +39,10 @@ struct TrackRow: View {
             if targeted { Rectangle().fill(theme.accent).frame(height: 2).allowsHitTesting(false) }
         }
         .onTapGesture(perform: play)
-        .help("\(track.title)\nЩелчок — играть, перетащите мышью — изменить порядок")
+        .help(languages.strings.trackHelp(track.title))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: "Воспроизвести", play)
+        .accessibilityAction(named: languages.strings.play, play)
         .onDrag { trackProvider(track, playlistID: sourceID) }
         .onDrop(of: TrackDropDelegate.types, delegate: TrackDropDelegate(model: model, playlistID: dropTargetID, before: track.id,
                                                                           libraryReorder: libraryReorder, targeted: $targeted))
@@ -56,19 +57,21 @@ struct TrackContextMenu: View {
     let track: Track
     let sourceID: UUID?
     var libraryOrder = false
+    @ObservedObject private var languages = LanguageSettings.shared
+    private var s: Strings { languages.strings }
     private var ids: [UUID] { libraryOrder ? model.libraryEntries.map(\.id) : (model.tracks(in: sourceID) ?? []).map(\.id) }
     private var index: Int { ids.firstIndex(of: track.id) ?? 0 }
     private var sourceName: String {
-        model.playlists.first { $0.id == sourceID }?.name ?? model.folders.first { $0.id == sourceID }?.name ?? "Вне плейлистов"
+        model.playlists.first { $0.id == sourceID }?.name ?? model.folders.first { $0.id == sourceID }?.name ?? s.outsidePlaylists
     }
     var body: some View {
-        Text("Источник: \(sourceName)")
+        Text(s.source(sourceName))
         Divider()
-        Button("Выше") { move(-1) }.disabled(index == 0)
-        Button("Ниже") { move(1) }.disabled(index >= ids.count - 1)
+        Button(s.moveUp) { move(-1) }.disabled(index == 0)
+        Button(s.moveDown) { move(1) }.disabled(index >= ids.count - 1)
         let targets = model.playlists.filter { $0.id != sourceID }
         if !targets.isEmpty {
-            Menu(model.isPlaylist(sourceID) ? "Переместить в плейлист" : "Добавить в плейлист") {
+            Menu(model.isPlaylist(sourceID) ? s.moveToPlaylist : s.addToPlaylist) {
                 ForEach(targets) { playlist in
                     Button(playlist.name) {
                         model.moveTrack(TrackDragPayload(playlistID: sourceID, trackID: track.id), to: playlist.id, before: nil)
@@ -80,9 +83,9 @@ struct TrackContextMenu: View {
         Button(removeTitle, role: .destructive) { model.removeTrack(track.id, from: sourceID) }
     }
     private var removeTitle: String {
-        if model.isPlaylist(sourceID) { return "Убрать из плейлиста" }
-        if model.isFolder(sourceID) { return "Скрыть из папки" }
-        return "Убрать из списка"
+        if model.isPlaylist(sourceID) { return s.removeFromPlaylist }
+        if model.isFolder(sourceID) { return s.hideFromFolder }
+        return s.removeFromList
     }
     private func move(_ offset: Int) {
         if libraryOrder { model.moveInLibraryBy(track.id, offset: offset) }

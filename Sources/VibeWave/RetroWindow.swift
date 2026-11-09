@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VibeWaveCore
 
 /// Окно без системной полосы macOS: заголовок и кнопки рисует RetroCaptionView.
 /// Возможность стать key/main нужна для клавиатуры в borderless-окне.
@@ -39,7 +40,7 @@ final class RetroWindowController: NSWindowController {
         window.hasShadow = true
         window.isOpaque = true
         window.backgroundColor = NSColor.windowBackgroundColor
-        window.contentMinSize = NSSize(width: 390, height: 440)
+        window.contentMinSize = NSSize(width: 440, height: 460)
         window.contentView = NSHostingView(rootView: ContentView(model: model))
         super.init(window: window)
         if !window.setFrameUsingName("VibeWaveMainWindow") { window.center() }
@@ -60,17 +61,24 @@ final class RetroWindowController: NSWindowController {
 /// системные действия. Ни невидимых кнопок macOS, ни декоративных дублей здесь нет.
 struct RetroWindowTitleBar: NSViewRepresentable {
     let theme: PlayerTheme
-    func makeNSView(context: Context) -> RetroCaptionView { RetroCaptionView(theme: theme) }
-    func updateNSView(_ view: RetroCaptionView, context: Context) { view.theme = theme }
+    let strings: Strings
+    func makeNSView(context: Context) -> RetroCaptionView { RetroCaptionView(theme: theme, strings: strings) }
+    func updateNSView(_ view: RetroCaptionView, context: Context) {
+        view.theme = theme
+        view.strings = strings
+    }
 }
 
 final class RetroCaptionView: NSView {
     var theme: PlayerTheme { didSet { buttons.forEach { $0.theme = theme }; needsDisplay = true } }
+    /// Подсказки и доступные имена кнопок меняются вместе с языком интерфейса.
+    var strings: Strings { didSet { applyStrings() } }
     private var buttons: [RetroCaptionButton] = []
     override var isFlipped: Bool { true }
 
-    init(theme: PlayerTheme) {
+    init(theme: PlayerTheme, strings: Strings) {
         self.theme = theme
+        self.strings = strings
         super.init(frame: .zero)
         for kind in [RetroCaptionButton.Kind.minimize, .maximize, .close] {
             let button = RetroCaptionButton(kind: kind, theme: theme)
@@ -80,9 +88,21 @@ final class RetroCaptionView: NSView {
             buttons.append(button)
         }
         setAccessibilityRole(.group)
-        setAccessibilityLabel("Заголовок окна VibeWave")
+        applyStrings()
     }
     required init?(coder: NSCoder) { nil }
+
+    private func applyStrings() {
+        setAccessibilityLabel(strings.titleBar)
+        for button in buttons {
+            switch button.kind {
+            case .minimize: button.toolTip = strings.minimize
+            case .maximize: button.toolTip = strings.zoom
+            case .close: button.toolTip = strings.closeWindow
+            }
+            button.setAccessibilityLabel(button.toolTip)
+        }
+    }
 
     override func layout() {
         super.layout()
@@ -131,12 +151,6 @@ final class RetroCaptionButton: NSButton {
         isBordered = false
         focusRingType = .none
         setButtonType(.momentaryPushIn)
-        switch kind {
-        case .minimize: toolTip = "Свернуть"
-        case .maximize: toolTip = "Развернуть или восстановить"
-        case .close: toolTip = "Закрыть окно"
-        }
-        setAccessibilityLabel(toolTip)
     }
     required init?(coder: NSCoder) { nil }
 

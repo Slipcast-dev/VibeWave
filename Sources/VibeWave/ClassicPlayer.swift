@@ -10,6 +10,9 @@ struct ClassicPlayerPanel: View {
     @ObservedObject var model: PlayerModel
     let theme: PlayerTheme
     @AppStorage("classic.remainingTime") private var showRemaining = false
+    @State private var showEqualizer = false
+    @ObservedObject private var languages = LanguageSettings.shared
+    private var s: Strings { languages.strings }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -22,17 +25,17 @@ struct ClassicPlayerPanel: View {
                     HStack(spacing: 6) {
                         Image(systemName: "speaker.wave.1").font(.system(size: 10))
                         RetroSlider(value: $model.volume, theme: theme)
-                            .frame(minWidth: 70).help("Громкость").accessibilityLabel("Громкость")
-                        Text("Б").font(.custom("Arial", size: 10).weight(.bold)).help("Баланс")
+                            .frame(minWidth: 70).help(s.volume).accessibilityLabel(s.volume)
+                        Text(s.balanceShort).font(.custom("Arial", size: 10).weight(.bold)).help(s.balance)
                         RetroSlider(value: $model.balance, range: -1...1, theme: theme)
-                            .frame(width: 56).help("Баланс (двойной щелчок — центр)").accessibilityLabel("Баланс")
+                            .frame(width: 56).help(s.balanceHelp).accessibilityLabel(s.balance)
                             .simultaneousGesture(TapGesture(count: 2).onEnded { model.balance = 0 })
                     }
                 }
             }
             RetroSlider(value: Binding(get: { model.position }, set: { model.seek($0) }),
                         range: 0...max(1, model.duration), theme: theme)
-                .disabled(model.current == nil).accessibilityLabel("Позиция воспроизведения")
+                .disabled(model.current == nil).accessibilityLabel(s.position)
             controls
         }
         .padding(7)
@@ -57,7 +60,7 @@ struct ClassicPlayerPanel: View {
                         .foregroundColor(model.current == nil ? theme.shadow : theme.foreground)
                         .lineLimit(1).fixedSize()
                 }
-                .buttonStyle(.plain).help("Щелчок: прошедшее/оставшееся время")
+                .buttonStyle(.plain).help(s.timeHelp)
             }
             SpectrumView(model: model, theme: theme).frame(height: 20)
         }
@@ -79,7 +82,7 @@ struct ClassicPlayerPanel: View {
     }
 
     private var marqueeText: String {
-        guard let track = model.current else { return "VibeWave — откройте музыку и нажмите ▶" }
+        guard let track = model.current else { return s.idleMarquee }
         let number = model.visibleTracks.firstIndex(where: { $0.id == track.id }).map { "\($0 + 1). " } ?? ""
         return "\(number)\(track.title) (\(timeLabel(track.duration)))"
     }
@@ -91,8 +94,8 @@ struct ClassicPlayerPanel: View {
             field(model.currentSampleRate > 0 ? "\(Int((model.currentSampleRate / 1000).rounded()))" : "", width: 26)
             Text("kHz")
             Spacer(minLength: 2)
-            Text("моно").foregroundColor(model.currentChannels == 1 ? theme.foreground : theme.shadow)
-            Text("стерео").foregroundColor(model.currentChannels >= 2 ? theme.foreground : theme.shadow)
+            Text(s.mono).foregroundColor(model.currentChannels == 1 ? theme.foreground : theme.shadow)
+            Text(s.stereo).foregroundColor(model.currentChannels >= 2 ? theme.foreground : theme.shadow)
         }
         // Подписи не переносятся и не обрезаются в узком окне.
         .lineLimit(1)
@@ -111,19 +114,31 @@ struct ClassicPlayerPanel: View {
     private var controls: some View {
         HStack(spacing: 2) {
             Button { model.previous() } label: { Image(systemName: "backward.end.fill") }
-                .disabled(model.current == nil).help("Предыдущий трек")
+                .disabled(model.current == nil).help(s.previousTrack)
             Button {
                 if model.current == nil || !model.playing { model.toggle() }
             } label: { Image(systemName: "play.fill") }
-                .help("Воспроизвести")
+                .help(s.play)
                 .disabled(model.current == nil && model.visibleTracks.isEmpty)
             Button { if model.playing { model.toggle() } } label: { Image(systemName: "pause.fill") }
-                .disabled(!model.playing).help("Пауза")
+                .disabled(!model.playing).help(s.pause)
             Button { model.stop() } label: { Image(systemName: "stop.fill") }
-                .disabled(model.current == nil).help("Стоп")
+                .disabled(model.current == nil).help(s.stop)
             Button { model.next() } label: { Image(systemName: "forward.end.fill") }
-                .disabled(model.current == nil).help(model.nextTrack.map { "Следующий: \($0.title)" } ?? "Конец очереди")
+                .disabled(model.current == nil).help(model.nextTrack.map { s.nextTrack($0.title) } ?? s.endOfQueue)
             Spacer(minLength: 0)
+            // Эквалайзер у правого края; надпись синяя, когда он включён.
+            Button { showEqualizer.toggle() } label: {
+                Text("EQ").font(.custom("Arial", size: 11).weight(.bold))
+                    .foregroundColor(model.equalizer.enabled ? theme.accent : theme.foreground)
+            }
+            .buttonStyle(RetroButtonStyle(theme: theme, compact: true, width: 30, isOn: showEqualizer))
+            .help(s.eqHelp)
+            .accessibilityLabel(s.eqHelp)
+            .accessibilityValue(model.equalizer.enabled ? s.eqOn : "")
+            .popover(isPresented: $showEqualizer, arrowEdge: .bottom) {
+                EqualizerPanel(model: model, theme: theme)
+            }
         }
         .font(.system(size: 10, weight: .bold))
         .buttonStyle(RetroButtonStyle(theme: theme, compact: true, width: 30))

@@ -4,6 +4,9 @@
 <key>CFBundleName</key><string>VibeWave</string>
 <key>CFBundleDisplayName</key><string>VibeWave</string>
 <key>CFBundleIdentifier</key><string>local.vibewave.player</string>
+<key>CFBundleDevelopmentRegion</key><string>ru</string>
+<key>CFBundleLocalizations</key><array><string>ru</string><string>en</string></array>
+<key>CFBundleAllowMixedLocalizations</key><true/>
 <key>CFBundleExecutable</key><string>VibeWave</string>
 <key>CFBundleIconFile</key><string>VibeWaveIcon.icns</string>
 <key>UTExportedTypeDeclarations</key><array><dict>

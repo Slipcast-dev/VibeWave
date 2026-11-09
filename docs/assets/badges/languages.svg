@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="137" height="22" viewBox="0 0 137 22" role="img" aria-label="language: RU | EN">
+  <title>language: RU | EN</title>
+  <rect width="137" height="22" fill="#c0c0c0"/>
+  <path d="M1 21V1H136" fill="none" stroke="#fff" stroke-width="2"/>
+  <path d="M136 1V21H1" fill="none" stroke="#404040" stroke-width="2"/>
+  <rect x="72" y="3" width="60" height="16" fill="#000080"/>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" text-anchor="middle">
+    <text x="36" y="15" fill="#000">language</text>
+    <text x="102" y="15" fill="#fff">RU | EN</text>
+  </g>
+</svg>

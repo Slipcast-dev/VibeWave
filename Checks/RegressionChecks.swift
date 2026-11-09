@@ -10,6 +10,11 @@ struct RegressionChecks {
     static func main() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
+        // Проверки сверяют русские подписи; язык системы на машине проверки может быть любым.
+        let languages = LanguageSettings.shared
+        let savedPreference = languages.preference
+        defer { languages.preference = savedPreference }
+        languages.preference = .ru
         let support = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
         let a = Track(url: URL(fileURLWithPath: "/tmp/a.mp3"), duration: 84)
@@ -153,6 +158,37 @@ struct RegressionChecks {
         precondition(!dropModel.openTracks.contains(where: { $0.id == firstOutside.id }))
         precondition(dropModel.playlists == originalPlaylist && dropModel.selectedID == selectedID)
         print("PASS: explicit outside-queue actions, manual order, in-order navigation")
+
+        // Воспроизведение через AVAudioEngine с эквалайзером: длительность, перемотка,
+        // смена настроек без остановки, автопереход и остановка после последнего трека.
+        let savedEqualizer = UserDefaults.standard.data(forKey: PlayerModel.equalizerKey)
+        defer {
+            if let data = savedEqualizer { UserDefaults.standard.set(data, forKey: PlayerModel.equalizerKey) }
+            else { UserDefaults.standard.removeObject(forKey: PlayerModel.equalizerKey) }
+        }
+        let audioModel = PlayerModel(supportDirectory: support.appendingPathComponent("AudioCheck"))
+        audioModel.receiveFiles(audioURLs)
+        waitFor { !audioModel.importing }
+        let clips = audioModel.openTracks
+        precondition(clips.count == 2 && abs(clips[0].duration - 0.1) < 0.02 && abs(clips[1].duration - 0.26) < 0.03,
+                     "Длительность FLAC и MP3 по AVAudioFile")
+        audioModel.equalizer = EqualizerSettings(preset: .bassBoost)
+        audioModel.play(clips[1], in: clips)
+        precondition(audioModel.playing && audioModel.current?.id == clips[1].id && audioModel.duration > 0.2, audioModel.error ?? "Воспроизведение")
+        audioModel.equalizer.gains[0] = -6
+        audioModel.equalizer.enabled = false
+        precondition(audioModel.playing && audioModel.current?.id == clips[1].id, "Смена эквалайзера не прерывает трек")
+        audioModel.seek(0.05)
+        precondition(abs(audioModel.position - 0.05) < 0.01, "Перемотка")
+        waitFor { audioModel.current == nil }
+        precondition(!audioModel.playing && audioModel.error == nil, "После последнего трека воспроизведение останавливается")
+        audioModel.play(clips[0], in: clips)
+        waitFor { audioModel.current?.id == clips[1].id || audioModel.error != nil }
+        precondition(audioModel.error == nil, "Автопереход к следующему треку")
+        audioModel.stop()
+        let reopenedAudio = PlayerModel(supportDirectory: support.appendingPathComponent("AudioCheck"))
+        precondition(reopenedAudio.equalizer == audioModel.equalizer && reopenedAudio.equalizer.gains[0] == -6, "Эквалайзер сохраняется")
+        print("PASS: AVAudioEngine playback, equalizer changes while playing, seek, auto-advance, stop at end, equalizer persistence")
         // Папки, общий список «Вся музыка», ручной порядок и группировка.
         let libraryModel = PlayerModel(supportDirectory: support.appendingPathComponent("LibraryCheck"))
         libraryModel.groupByPlaylists = false
@@ -275,6 +311,30 @@ struct RegressionChecks {
             window.close()
             print("PASS: borderless key window, three connected caption buttons, maximize/restore")
         }
+        // Переключение языка меняет строки модели, разделы библиотеки и ход импорта сразу.
+        let languageModel = PlayerModel(supportDirectory: support.appendingPathComponent("LanguageCheck"))
+        precondition(languageModel.selectedTitle == "Вся музыка" && languageModel.librarySections.last?.title == "Вне плейлистов")
+        languages.preference = .en
+        precondition(languages.language == .en && languageModel.selectedTitle == "All Music", "Английский интерфейс")
+        precondition(languageModel.librarySections.last?.title == "Not in Playlists")
+        languageModel.addFolders([fixtures])
+        precondition(languageModel.importProgress?.label(languageModel.strings).hasPrefix("Folder “Fixtures”") == true, "Ход импорта на английском")
+        languages.preference = .ru
+        precondition(languageModel.importProgress?.label(languageModel.strings).hasPrefix("Папка «Fixtures»") == true, "Ход импорта переключается сразу")
+        waitFor { !languageModel.importing }
+        languageModel.receiveFiles([fixtures])
+        precondition(languageModel.error == "Эта папка уже добавлена.")
+        languages.preference = .en
+        languageModel.error = nil
+        languageModel.receiveFiles([fixtures])
+        precondition(languageModel.error == "This folder has already been added.", "Сообщения модели на английском")
+        let caption = RetroCaptionView(theme: .retro, strings: languages.strings)
+        precondition(Set(caption.subviews.compactMap { ($0 as? NSButton)?.toolTip }) == ["Minimize", "Zoom", "Close Window"])
+        languages.preference = .ru
+        caption.strings = languages.strings
+        precondition(Set(caption.subviews.compactMap { ($0 as? NSButton)?.toolTip }) == ["Свернуть", "Развернуть или восстановить", "Закрыть окно"],
+                     "Подсказки кнопок окна переключаются")
+        print("PASS: Russian/English switching for model messages, library sections, import progress, caption buttons")
         print("PASS: real MP3/FLAC import and valid app icon")
         print("PASS: migration, reorder up/down/end, cross-playlist move, duplicates, persistence, payload, formats")
     }

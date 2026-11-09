@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="166" viewBox="0 0 1280 166" role="img" aria-labelledby="title desc">
+  <title id="title">VibeWave 1.0.0 — macOS Universal</title>
+  <desc id="desc">Universal release for Apple Silicon (arm64) and Intel (x86_64). Local ad hoc signature, not notarized by Apple. DMG, PKG, ZIP and SHA-256 are available in the private release.</desc>
+  <rect width="1280" height="166" fill="#c0c0c0"/>
+  <path d="M1 165V1H1279" fill="none" stroke="#fff" stroke-width="2"/><path d="M1279 1V165H1" fill="none" stroke="#404040" stroke-width="2"/>
+  <rect x="10" y="10" width="1260" height="146" fill="#000080"/>
+  <g fill="#fff" font-family="Arial, sans-serif"><text x="31" y="51" font-size="29" font-weight="700">Release 1.0.0 · Apple Silicon + Intel (universal)</text><text x="31" y="91" font-size="22">Local signature (ad hoc) · Not notarized by Apple</text><text x="31" y="130" font-size="18">DMG · PKG · ZIP + SHA-256 · Access per private repository permissions</text></g>
+</svg>

@@ -4,7 +4,7 @@
 
 - **Swift 5.8+, SwiftUI:** панель плеера, список треков, библиотека, объёмные кнопки и ползунки.
 - **AppKit:** жизненный цикл приложения, собственное окно без стандартной полосы macOS, системные меню, файловые диалоги, иконка и область перемещения окна.
-- **AVFoundation / AVAudioPlayer:** проверка и декодирование MP3/FLAC, воспроизведение текущего трека, уровни каналов для индикатора.
+- **AVFoundation / AVAudioEngine:** декодирование MP3/FLAC (`AVAudioFile`), воспроизведение через `AVAudioPlayerNode`, 10-полосный эквалайзер `AVAudioUnitEQ`, баланс и громкость, уровни каналов для индикатора.
 - **Foundation / Codable:** JSON-библиотека, поиск файлов в папках, закладки файлов и атомарная запись.
 - Сторонних пакетов и сетевого доступа у приложения нет.
 
@@ -14,6 +14,8 @@
 Sources/VibeWaveCore/
   Library.swift              модели, хранилище, ручной порядок, форматирование времени
   MusicFiles.swift           поиск MP3/FLAC в папке (только обычные файлы)
+  Localization.swift         языки интерфейса, выбор по системе, строки RU/EN
+  Equalizer.swift            настройки эквалайзера, частоты полос, пресеты
 Sources/VibeWave/
   VibeWaveApp.swift          точка входа, делегат приложения, меню
   RetroWindow.swift          borderless-окно, заголовок и его кнопки
@@ -21,8 +23,10 @@ Sources/VibeWave/
   PlayerModel+Library.swift  плейлисты, папки, перестановка и перенос треков
   PlayerModel+Import.swift   добавление файлов и папок, прогресс, отмена
   PlayerModel+Playback.swift очередь воспроизведения, управление AudioEngine
-  AudioEngine.swift          AVAudioPlayer, security-scoped доступ, события декодера
+  AudioEngine.swift          AVAudioEngine: плеер, эквалайзер, баланс, уровни, перемотка
+  EqualizerPanel.swift       панель эквалайзера (popover кнопки EQ)
   MediaScanner.swift         фоновое чтение файлов и папок, ImportJob, ImportProgress
+  LanguageSettings.swift     текущий язык, сохранение выбора, смена языка системы
   ContentView.swift          окно: панель плеера, плейлист, библиотека, нижняя панель
   ClassicPlayer.swift        табло, бегущая строка, индикатор уровня, кнопки и ползунки
   TrackTable.swift           список треков: раздел, «Общий список», «По плейлистам»
@@ -44,6 +48,7 @@ Sources/VibeWave/
 - `ManualOrder` — ручной порядок общего списка: известные ID по порядку, новые в конце.
 - `MusicFiles.collect(in:isCancelled:)` рекурсивно ищет MP3/FLAC. Берутся только обычные файлы и символические ссылки на обычные файлы; скрытые файлы, каталоги с «музыкальным» расширением и содержимое пакетов (`.app` и т. п.) пропускаются. `nil` означает недоступную папку, отмена — `CancellationError`.
 - `TrackDragPayload` — содержимое внутреннего переноса: ID источника и трека.
+- `AppLanguage`, `LanguagePreference`, `Strings` — локализация (см. ниже).
 
 Значимые типы ядра объявлены `Sendable`: их безопасно передавать из фоновых потоков.
 
@@ -71,7 +76,25 @@ Sources/VibeWave/
 
 ### AudioEngine
 
-Обёртка над `AVAudioPlayer` для одного текущего трека. Открывает и закрывает security-scoped доступ, передаёт громкость и баланс, считает битрейт по размеру файла, отдаёт уровни каналов. События делегата AVFoundation приходят как `nonisolated`, переносятся на главный поток и игнорируются, если декодер уже заменён другим треком. Модель получает их через `onFinish` и `onDecodeError`.
+Воспроизведение одного текущего трека через `AVAudioEngine`:
+
+```text
+AVAudioFile → AVAudioPlayerNode → AVAudioUnitEQ (10 полос) → AVAudioMixerNode (баланс, громкость) → mainMixer → выход
+```
+
+- `load(_:)` открывает файл (`AVAudioFile`), подключает узлы в формате файла и планирует его целиком. Битрейт считается по размеру файла.
+- Перемотка — новое расписание сегмента с нужного кадра; `currentTime` = кадр начала + время плеера.
+- Завершение сегмента приходит из потока звука и переносится на главный поток. Счётчик `generation` отбрасывает завершения отменённых расписаний (стоп, перемотка, смена трека). Модель получает естественный конец через `onFinish`.
+- Эквалайзер: полосы `parametric` шириной в октаву на частотах `EqualizerSettings.frequencies`; `bypass` — выключатель, `globalGain` — предусиление. Изменения применяются к играющему звуку.
+- Баланс и громкость — `pan` и `volume` промежуточного микшера на входе основного.
+- Уровни каналов считаются по отводу (`installTap`) промежуточного микшера: RMS в дБ, шкала −50…0 дБ.
+- `AVAudioEngineConfigurationChange` (смена аудиовыхода) перезапускает движок и продолжает с той же позиции; если не удалось, модель получает `onFailure` и показывает сообщение.
+
+### Эквалайзер
+
+`EqualizerSettings` (ядро) — включение, предусиление и 10 значений полос. Значения всегда приводятся к ±12 дБ и ровно к 10 полосам, в том числе при чтении сохранённых настроек. `EqualizerPreset` — 9 пресетов; `preset` определяет, совпадают ли текущие значения с пресетом.
+
+`PlayerModel.equalizer` передаёт настройки в `AudioEngine` и сохраняет их в `UserDefaults` под ключом `equalizer`. `EqualizerPanel` показывается в popover кнопки EQ: изменение ползунка округляется до 1 дБ и включает эквалайзер.
 
 ### Импорт, прогресс и отмена
 
@@ -87,6 +110,19 @@ Sources/VibeWave/
 `cancelImport()` помечает задачу отменённой и сразу разблокирует интерфейс. Фоновые потоки останавливаются на ближайшем файле, их результат отбрасывается, библиотека не меняется. В нижней панели во время импорта вместо счётчика треков показываются ход работы и кнопка «Отмена».
 
 Ошибка создания security-scoped закладки не блокирует импорт: в локальной сборке без App Sandbox app-scope key может отсутствовать. Тогда сохраняется обычный файловый URL. Файл, перемещённый без доступной закладки, потребуется добавить заново.
+
+### Локализация
+
+Интерфейс поддерживает русский и английский. Переключение происходит без перезапуска, поэтому строки хранятся не в `.lproj`, а в коде ядра:
+
+- `Strings` — структура со всеми строками интерфейса; `Strings.ru` и `Strings.en` — полные экземпляры. Пропущенный перевод не скомпилируется. Строки с подстановкой — замыкания (`progressCount`, `errorCouldNotOpen` и т. п.).
+- `AppLanguage.preferred(from:)` берёт первый русский или английский язык из `Locale.preferredLanguages`; если их нет, выбирается английский.
+- `LanguagePreference` — выбор пользователя: `system`, `ru` или `en`.
+- `LanguageSettings` (приложение, `@MainActor`) хранит выбор в `UserDefaults` под ключом `app.language`, следит за `NSLocale.currentLocaleDidChangeNotification` и публикует изменения.
+
+Представления подписаны на `LanguageSettings.shared` и берут строки из `strings`. Модель формирует сообщения через `PlayerModel.strings` в момент ошибки. Ход импорта хранит вид операции (`ImportProgress.Kind`), а подпись строится при отрисовке, поэтому меняется вместе с языком. Главное меню приложения перестраивается при каждом изменении, подсказки кнопок заголовка обновляются через `RetroCaptionView.strings`.
+
+В `Info.plist` указаны `CFBundleLocalizations` (ru, en) и `CFBundleAllowMixedLocalizations`: системные диалоги (выбор файлов) следуют языку macOS.
 
 ### Drag and drop
 
@@ -121,7 +157,8 @@ CI (`.github/workflows/ci.yml`) на `macos-15-intel` выполняет `swift 
 
 - [NSWindow.performDrag](https://developer.apple.com/documentation/appkit/nswindow/performdrag(with:))
 - [Сохранение положения окна](https://developer.apple.com/documentation/appkit/nswindow/setframeautosavename(_:))
-- [AVAudioPlayer](https://developer.apple.com/documentation/avfaudio/avaudioplayer)
+- [AVAudioEngine](https://developer.apple.com/documentation/avfaudio/avaudioengine)
+- [AVAudioUnitEQ](https://developer.apple.com/documentation/avfaudio/avaudiouniteq)
 - [FileManager.enumerator](https://developer.apple.com/documentation/foundation/filemanager/enumerator(at:includingpropertiesforkeys:options:errorhandler:))
 - [DispatchQueue.concurrentPerform](https://developer.apple.com/documentation/dispatch/dispatchqueue/concurrentperform(iterations:execute:))
 - [SwiftUI drag and drop](https://developer.apple.com/documentation/swiftui/drag-and-drop)

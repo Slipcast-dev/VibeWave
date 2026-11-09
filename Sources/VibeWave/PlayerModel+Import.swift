@@ -12,7 +12,7 @@ extension PlayerModel {
         guard !importing else { return }
         let targetID = isPlaylist(selectedID) ? selectedID : nil
         let panel = NSOpenPanel()
-        panel.title = targetID == nil ? "Добавить музыку вне плейлистов" : "Добавить музыку в плейлист"
+        panel.title = targetID == nil ? strings.panelAddOutside : strings.panelAddToPlaylist
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "flac")].compactMap { $0 }
@@ -23,7 +23,7 @@ extension PlayerModel {
     /// Открытие через Finder или Dock всегда относится к очереди вне плейлистов,
     /// даже если перед этим пользователь просматривал сохранённый плейлист.
     func openFiles(_ urls: [URL]) {
-        guard !importing else { error = "Дождитесь завершения текущего добавления файлов."; return }
+        guard !importing else { error = strings.errorImportBusy; return }
         selectedID = nil
         importURLs(urls, into: nil, autoplay: true)
     }
@@ -31,7 +31,7 @@ extension PlayerModel {
     /// nil — очередь. Отсутствующий или удалённый плейлист не создаётся заново.
     /// Папки из Finder добавляются как папки библиотеки; файлы в папку не перетаскиваются.
     func receiveFiles(_ urls: [URL], into playlistID: UUID? = nil, before destination: UUID? = nil) {
-        guard !importing else { error = "Дождитесь завершения текущего добавления файлов."; return }
+        guard !importing else { error = strings.errorImportBusy; return }
         let directories = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
         if !directories.isEmpty { addFolders(directories); return }
         importURLs(urls, into: isFolder(playlistID) ? nil : playlistID, before: destination)
@@ -40,7 +40,7 @@ extension PlayerModel {
     func chooseFolder() {
         guard !importing else { return }
         let panel = NSOpenPanel()
-        panel.title = "Добавить папку с музыкой"
+        panel.title = strings.addMusicFolder
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
@@ -59,16 +59,17 @@ extension PlayerModel {
     // MARK: Задачи
 
     func addFolders(_ urls: [URL]) {
-        guard !importing else { error = "Дождитесь завершения текущего добавления файлов."; return }
+        guard !importing else { error = strings.errorImportBusy; return }
         let fresh = urls.filter { url in !folders.contains { $0.url.standardizedFileURL == url.standardizedFileURL } }
-        guard !fresh.isEmpty else { error = "Эта папка уже добавлена."; return }
-        let job = beginJob(fresh.count == 1 ? "Папка «\(fresh[0].lastPathComponent)»" : "Папки (\(fresh.count))")
+        guard !fresh.isEmpty else { error = strings.errorFolderAlreadyAdded; return }
+        let job = beginJob(fresh.count == 1 ? .folder(fresh[0].lastPathComponent) : .folders(fresh.count))
+        let unavailable = strings.errorFolderUnavailableShort
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let scanned = try? fresh.map { url -> (MusicFolder?, [String]) in
                 let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
                 guard let scan = try MediaScanner.scanFolder(url, bookmark: nil, job: job, progress: progress) else {
-                    return (nil, ["папка «\(url.lastPathComponent)» недоступна"])
+                    return (nil, [unavailable(url.lastPathComponent)])
                 }
                 return (MusicFolder(url: url, bookmark: bookmark, tracks: scan.added.tracks), scan.added.failures)
             }
@@ -87,7 +88,7 @@ extension PlayerModel {
     func rescanFolder(_ id: UUID) {
         guard !importing, let folder = folders.first(where: { $0.id == id }) else { return }
         let known = Set(folder.tracks.map { $0.url.standardizedFileURL })
-        let job = beginJob("Папка «\(folder.name)»")
+        let job = beginJob(.folder(folder.name))
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let scan = try? MediaScanner.scanFolder(folder.url, bookmark: folder.bookmark, known: known, job: job, progress: progress)
@@ -95,7 +96,7 @@ extension PlayerModel {
                 guard let self = self, self.finishJob(job) else { return }
                 // Недоступная папка не очищается: список треков и их порядок сохраняются.
                 guard let scan = scan else {
-                    self.error = "Папка «\(folder.name)» недоступна. Подключите диск и повторите обновление."
+                    self.error = self.strings.errorFolderUnavailable(folder.name)
                     return
                 }
                 guard let index = self.folders.firstIndex(where: { $0.id == id }) else { return }
@@ -110,10 +111,10 @@ extension PlayerModel {
     /// Общий путь импорта файлов в очередь или плейлист.
     func importURLs(_ urls: [URL], into targetID: UUID?, before destination: UUID? = nil, autoplay: Bool = false) {
         guard !importing else { return }
-        guard tracks(in: targetID) != nil else { error = "Плейлист больше не существует."; return }
+        guard tracks(in: targetID) != nil else { error = strings.errorPlaylistGone; return }
         let supported = urls.filter { Track.accepts($0) && MusicFiles.isRegularFile($0) }
-        guard !supported.isEmpty else { error = "Добавьте локальные файлы MP3 или FLAC."; return }
-        let job = beginJob("Чтение файлов")
+        guard !supported.isEmpty else { error = strings.errorNoSupportedFiles; return }
+        let job = beginJob(.files)
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let batch = try? MediaScanner.readTracks(supported, job: job, progress: progress)
@@ -126,7 +127,7 @@ extension PlayerModel {
 
     private func apply(_ batch: MediaScanner.Batch, into targetID: UUID?, before destination: UUID?, autoplay: Bool) {
         guard var tracks = tracks(in: targetID) else {
-            error = "Плейлист был удалён во время добавления файлов."
+            error = strings.errorPlaylistDeletedDuringImport
             return
         }
         for track in batch.tracks {
@@ -147,15 +148,14 @@ extension PlayerModel {
     private func report(failures: [String]) {
         guard !failures.isEmpty else { return }
         // Длинный список имён не помещается в окно сообщения.
-        let shown = failures.prefix(10).joined(separator: ", ")
-        error = "Не удалось открыть: " + shown + (failures.count > 10 ? " и ещё \(failures.count - 10)" : "")
+        error = strings.errorCouldNotOpen(Array(failures.prefix(10)), max(0, failures.count - 10))
     }
 
-    private func beginJob(_ title: String) -> ImportJob {
+    private func beginJob(_ kind: ImportProgress.Kind) -> ImportJob {
         let job = ImportJob()
         importJob = job
         importing = true
-        importProgress = ImportProgress(title: title)
+        importProgress = ImportProgress(kind: kind)
         return job
     }
 

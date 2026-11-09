@@ -12,11 +12,13 @@ struct ContentView: View {
     @State private var renameID: UUID?
     @State private var dropTargeted = false
     @AppStorage("classic.showLibrary") private var showLibrary = false
+    @ObservedObject private var languages = LanguageSettings.shared
     private let theme = PlayerTheme.retro
+    private var s: Strings { languages.strings }
 
     var body: some View {
         VStack(spacing: 4) {
-            RetroWindowTitleBar(theme: theme).frame(height: 20)
+            RetroWindowTitleBar(theme: theme, strings: s).frame(height: 20)
             ClassicPlayerPanel(model: model, theme: theme)
             HStack(spacing: 4) {
                 if showLibrary { sidebar }
@@ -37,15 +39,15 @@ struct ContentView: View {
         .preferredColorScheme(.light)
         .sheet(isPresented: $naming) {
             VStack(alignment: .leading, spacing: 16) {
-                Text(renameID == nil ? "Новый плейлист" : "Название плейлиста").fontWeight(.bold)
-                TextField("Название", text: $name)
+                Text(renameID == nil ? s.newPlaylist : s.playlistName).fontWeight(.bold)
+                TextField(s.namePlaceholder, text: $name)
                     .textFieldStyle(.plain).padding(7).background(theme.background)
                     .retroBevel(theme, sunken: true)
                     .onSubmit { commitName() }
                 HStack {
                     Spacer()
-                    Button("Отмена") { naming = false }.keyboardShortcut(.cancelAction)
-                    Button("Сохранить") { commitName() }.keyboardShortcut(.defaultAction)
+                    Button(s.cancel) { naming = false }.keyboardShortcut(.cancelAction)
+                    Button(s.save) { commitName() }.keyboardShortcut(.defaultAction)
                         .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -54,7 +56,7 @@ struct ContentView: View {
             .buttonStyle(RetroButtonStyle(theme: theme)).retroBevel(theme)
         }
         .alert("VibeWave", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("Понятно") { model.error = nil }
+            Button(s.ok) { model.error = nil }
         } message: { Text(model.error ?? "") }
     }
 
@@ -63,30 +65,30 @@ struct ContentView: View {
     private var sidebar: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 1) {
-                SidebarRow(model: model, id: nil, icon: "music.note.house", title: "Вся музыка",
+                SidebarRow(model: model, id: nil, icon: "music.note.house", title: s.allMusic,
                            count: model.libraryEntries.count, theme: theme) { EmptyView() }
-                sectionTitle("Плейлисты", help: "Создать плейлист") { renameID = nil; name = ""; naming = true }
+                sectionTitle(s.playlists, help: s.createPlaylist) { renameID = nil; name = ""; naming = true }
                 if model.playlists.isEmpty {
-                    Text("Нет плейлистов").foregroundColor(theme.secondary).padding(.horizontal, 7).padding(.vertical, 4)
+                    Text(s.noPlaylists).foregroundColor(theme.secondary).padding(.horizontal, 7).padding(.vertical, 4)
                 }
                 ForEach(model.playlists) { playlist in
                     SidebarRow(model: model, id: playlist.id, icon: "music.note.list", title: playlist.name,
                                count: playlist.tracks.count, theme: theme) {
-                        Button("Переименовать") { renameID = playlist.id; name = playlist.name; naming = true }
-                        Button("Удалить плейлист", role: .destructive) { model.deletePlaylist(playlist.id) }
+                        Button(s.rename) { renameID = playlist.id; name = playlist.name; naming = true }
+                        Button(s.deletePlaylist, role: .destructive) { model.deletePlaylist(playlist.id) }
                     }
                 }
-                sectionTitle("Папки", help: "Добавить папку с музыкой") { model.chooseFolder() }
+                sectionTitle(s.folders, help: s.addMusicFolder, blockedByImport: true) { model.chooseFolder() }
                 if model.folders.isEmpty {
-                    Text("Нет папок").foregroundColor(theme.secondary).padding(.horizontal, 7).padding(.vertical, 4)
+                    Text(s.noFolders).foregroundColor(theme.secondary).padding(.horizontal, 7).padding(.vertical, 4)
                 }
                 ForEach(model.folders) { folder in
                     SidebarRow(model: model, id: folder.id, icon: "folder", title: folder.name,
                                count: folder.tracks.count, theme: theme, acceptsDrop: false) {
-                        Button("Обновить содержимое") { model.rescanFolder(folder.id) }
-                        Button("Показать в Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder.url]) }
+                        Button(s.refreshFolder) { model.rescanFolder(folder.id) }
+                        Button(s.showInFinder) { NSWorkspace.shared.activateFileViewerSelecting([folder.url]) }
                         Divider()
-                        Button("Убрать из библиотеки", role: .destructive) { model.removeFolder(folder.id) }
+                        Button(s.removeFromLibrary, role: .destructive) { model.removeFolder(folder.id) }
                     }
                     .help(folder.url.path)
                 }
@@ -98,7 +100,8 @@ struct ContentView: View {
         .background(theme.panel).retroBevel(theme)
     }
 
-    private func sectionTitle(_ title: String, help: String, action: @escaping () -> Void) -> some View {
+    private func sectionTitle(_ title: String, help: String, blockedByImport: Bool = false,
+                              action: @escaping () -> Void) -> some View {
         HStack(spacing: 6) {
             Text(title).fontWeight(.bold)
             Spacer()
@@ -106,7 +109,7 @@ struct ContentView: View {
                 Image(systemName: "plus").font(.system(size: 9, weight: .bold))
             }
             .buttonStyle(RetroButtonStyle(theme: theme, compact: true))
-            .help(help).accessibilityLabel(help).disabled(model.importing && title == "Папки")
+            .help(help).accessibilityLabel(help).disabled(model.importing && blockedByImport)
         }
         .padding(.horizontal, 4).padding(.top, 10).padding(.bottom, 3)
     }
@@ -116,37 +119,39 @@ struct ContentView: View {
     private var playlist: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
-                Text("Плейлист:").fontWeight(.bold)
+                Text(s.playlistLabel).fontWeight(.bold)
                 Text(model.selectedTitle).lineLimit(1)
                 Spacer(minLength: 0)
             }.padding(.horizontal, 2)
             TrackTable(model: model, theme: theme)
             HStack(spacing: 3) {
-                Button { model.importFiles() } label: { Text("+ Файл") }
-                    .disabled(model.importing).help("Добавить файлы MP3/FLAC")
-                Button { model.chooseFolder() } label: { Text("+ Папка") }
-                    .disabled(model.importing).help("Добавить папку с музыкой")
-                Button { showLibrary.toggle() } label: { Text("Библиотека") }
+                Button { model.importFiles() } label: { Text(s.addFileButton) }
+                    .disabled(model.importing).help(s.addFilesHelp)
+                Button { model.chooseFolder() } label: { Text(s.addFolderButton) }
+                    .disabled(model.importing).help(s.addMusicFolder)
+                Button { showLibrary.toggle() } label: { Text(s.libraryButton) }
                     .buttonStyle(RetroButtonStyle(theme: theme, isOn: showLibrary, toolbar: true))
-                    .help("Показать или скрыть плейлисты и папки")
+                    .help(s.libraryHelp)
                 viewMenu
+                languageMenu
                 Spacer(minLength: 4)
                 if let progress = model.importProgress {
                     // Во время импорта вместо счётчика — ход работы и отмена.
-                    Text(progress.label)
+                    let label = progress.label(s)
+                    Text(label)
                         .font(.custom("Arial", size: 12)).lineLimit(1).truncationMode(.middle)
                         .padding(.horizontal, 6).frame(height: 24)
                         .background(theme.background).retroBevel(theme, sunken: true)
-                        .help(progress.label)
-                        .accessibilityLabel(progress.label)
-                    Button { model.cancelImport() } label: { Text("Отмена") }
-                        .help("Остановить добавление; библиотека не изменится")
+                        .help(label)
+                        .accessibilityLabel(label)
+                    Button { model.cancelImport() } label: { Text(s.cancel) }
+                        .help(s.cancelImportHelp)
                 } else {
                     Text("\(model.visibleTracks.count) · \(timeLabel(model.visibleTracks.reduce(0) { $0 + $1.duration }))")
                         .font(.custom("Arial", size: 12)).lineLimit(1)
                         .padding(.horizontal, 6).frame(height: 24)
                         .background(theme.background).retroBevel(theme, sunken: true)
-                        .help("Треков и общее время")
+                        .help(s.counterHelp)
                 }
             }
             .buttonStyle(RetroButtonStyle(theme: theme, toolbar: true))
@@ -157,12 +162,12 @@ struct ContentView: View {
     }
 
     private var viewMenu: some View {
-        RetroMenuButton(title: "Вид ▾") {
+        RetroMenuButton(title: s.viewMenu) {
             var items: [RetroMenuButton.Item] = [
-                .action("Общий список", checked: !model.groupByPlaylists) { model.groupByPlaylists = false },
-                .action("По плейлистам", checked: model.groupByPlaylists) { model.groupByPlaylists = true },
+                .action(s.flatList, checked: !model.groupByPlaylists) { model.groupByPlaylists = false },
+                .action(s.groupedList, checked: model.groupByPlaylists) { model.groupByPlaylists = true },
                 .separator,
-                .action("Вся музыка", checked: model.isLibrarySelected) { model.selectedID = nil }
+                .action(s.allMusic, checked: model.isLibrarySelected) { model.selectedID = nil }
             ]
             if !model.playlists.isEmpty || !model.folders.isEmpty { items.append(.separator) }
             items += model.playlists.map { playlist in
@@ -171,10 +176,25 @@ struct ContentView: View {
             items += model.folders.map { folder in
                 .action("📁 " + folder.name, checked: model.selectedID == folder.id) { model.selectedID = folder.id }
             }
-            items += [.separator, .action("Новый плейлист…") { renameID = nil; name = ""; naming = true }]
+            items += [.separator, .action(s.newPlaylistMenu) { renameID = nil; name = ""; naming = true }]
             return items
         }
-        .help("Вид списка и раздел")
+        .help(s.viewHelp)
+    }
+
+    /// Язык интерфейса: как в системе, русский или английский. Подпись — текущий язык.
+    private var languageMenu: some View {
+        RetroMenuButton(title: languages.language.code + " ▾") {
+            let system = RetroMenuButton.Item.action(s.languageSystem(languages.systemLanguage.nativeName),
+                                                     checked: languages.preference == .system) { languages.preference = .system }
+            return [system, .separator] + AppLanguage.allCases.map { language in
+                .action(language.nativeName, checked: languages.preference.rawValue == language.rawValue) {
+                    languages.preference = LanguagePreference(rawValue: language.rawValue) ?? .system
+                }
+            }
+        }
+        .help(s.languageHelp)
+        .accessibilityLabel("\(s.languageHelp): \(languages.language.nativeName)")
     }
 
     private func commitName() {
@@ -194,7 +214,7 @@ struct WindowSizer: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            window.contentMinSize = NSSize(width: wide ? 560 : 390, height: 460)
+            window.contentMinSize = NSSize(width: wide ? 600 : 440, height: 460)
             var frame = window.frame
             // Первое появление: слишком широкое окно (после прежней раскладки) сужаем.
             let firstOversized = context.coordinator.last == nil && frame.width > (wide ? 760 : 560)
