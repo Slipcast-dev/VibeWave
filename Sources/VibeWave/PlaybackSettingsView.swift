@@ -5,22 +5,60 @@ import VibeWaveCore
 @MainActor
 struct SettingsView: View {
     @ObservedObject var model: PlayerModel
+    @ObservedObject var preferences: SettingsPreferences
+    let shortcuts: GlobalShortcuts
+    let updater: Updater?
     @ObservedObject private var languages = LanguageSettings.shared
 
     var body: some View {
-        let strings = languages.strings
         TabView {
-            PlaybackSettingsView(model: model).tabItem { Text(strings.menuPlayback) }
-            PlaylistFileSettingsView(model: model).tabItem { Text(strings.playlists) }
-            ListeningSettingsView(model: model).tabItem { Text(strings.listeningHistory) }
-            SearchSettingsView(model: model).tabItem { Text(strings.searchTracks) }
+            GeneralSettingsView(model: model, preferences: preferences)
+                .tabItem { Text(label("Общие", "General")) }
+            soundSettings.tabItem { Text(label("Звук", "Audio")) }
+            librarySettings.tabItem { Text(label("Медиатека", "Library")) }
+            MetadataSettingsView(preferences: preferences)
+                .tabItem { Text(label("Метаданные и обложки", "Metadata & Artwork")) }
+            shortcutSettings.tabItem { Text(label("Горячие клавиши", "Shortcuts")) }
+            UpdateSettingsView(preferences: preferences, updater: updater)
+                .tabItem { Text(label("Обновления", "Updates")) }
         }
         .padding(12)
-        .frame(width: 470, height: 340)
+        .frame(width: 700, height: 480)
     }
+
+    private var soundSettings: some View {
+        let strings = languages.strings
+        return TabView {
+            AudioSettingsView(model: model).tabItem { Text(label("Обработка звука", "Audio Processing")) }
+            PlaybackSettingsView(model: model).tabItem { Text(strings.menuPlayback) }
+            AudioFormatsSettingsView().tabItem { Text(strings.audioFormatsTitle) }
+        }.padding(10)
+    }
+
+    private var librarySettings: some View {
+        let strings = languages.strings
+        return TabView {
+            SearchSettingsView(model: model).tabItem { Text(strings.searchTracks) }
+            PlaylistFileSettingsView(model: model).tabItem { Text(strings.playlists) }
+            ListeningSettingsView(model: model).tabItem { Text(strings.listeningHistory) }
+        }.padding(10)
+    }
+
+    private var shortcutSettings: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(label("Системные медиаклавиши и Пункт управления",
+                         "System media keys and Control Center"), isOn: $preferences.mediaKeys)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+            Divider()
+            ShortcutSettingsView(shortcuts: shortcuts) { preferences.mediaKeys = true }
+        }
+    }
+
+    private func label(_ ru: String, _ en: String) -> String { languages.language == .ru ? ru : en }
 }
 
-/// Первый раздел настроек. Панель плеера, меню и окно используют одни параметры модели.
+/// Панель плеера, меню и окно используют одни параметры транспорта.
 @MainActor
 struct PlaybackSettingsView: View {
     @ObservedObject var model: PlayerModel
@@ -124,8 +162,13 @@ private struct ListeningSettingsView: View {
                     }
                 }
             }
-            Button(strings.listeningClear) { confirmingClear = true }
-                .disabled(model.listeningActivity.summaries.isEmpty)
+            HStack {
+                Button(strings.listeningClear) { confirmingClear = true }
+                    .disabled(model.listeningActivity.summaries.isEmpty)
+                Button(languages.language == .ru ? "Сбросить настройки истории" : "Reset history settings") {
+                    model.listeningOptions = ListeningOptions()
+                }.disabled(model.listeningOptions == ListeningOptions())
+            }
         }
         .padding(16)
         .alert(strings.listeningClear, isPresented: $confirmingClear) {
@@ -133,6 +176,34 @@ private struct ListeningSettingsView: View {
             Button(strings.listeningClear, role: .destructive) { model.clearListeningHistory() }
         } message: {
             Text(strings.listeningClearHelp)
+        }
+    }
+}
+
+@MainActor
+private struct AudioFormatsSettingsView: View {
+    @ObservedObject private var languages = LanguageSettings.shared
+
+    var body: some View {
+        let strings = languages.strings
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(strings.audioFormatsHelp).foregroundColor(.secondary)
+                ForEach(AudioFormat.allCases) { format in
+                    Divider()
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(format.name).fontWeight(.semibold)
+                            Text(format.fileExtensions.map { "." + $0 }.joined(separator: ", "))
+                                .font(.caption).monospaced()
+                        }
+                        Spacer()
+                        Text(format.writesTags ? strings.audioFormatTagsReadWrite :
+                            format.readsTags ? strings.audioFormatTagsRead : strings.audioFormatPlaybackOnly)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }.padding(14)
         }
     }
 }

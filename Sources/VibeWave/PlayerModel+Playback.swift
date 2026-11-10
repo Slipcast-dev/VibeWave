@@ -1,4 +1,5 @@
 import Foundation
+import os
 import VibeWaveCore
 
 /// Очередь воспроизведения и управление AudioEngine. Очередь хранится отдельно
@@ -22,11 +23,12 @@ extension PlayerModel {
         }
     }
 
-    /// Изменения библиотеки обновляют следующие треки, не прерывая текущий.
+    /// Изменения библиотеки обновляют следующие треки и сохраняют текущую позицию.
     func refreshPlaybackQueue() {
         guard let current = current else { return }
         queue = playbackTracks ?? []
         if shuffleEnabled { shuffleOrder.update(queue.map(\.id), current: current.id) }
+        configureAudio()
     }
 
     func play(_ track: Track, in tracks: [Track], playlistID: UUID? = nil) {
@@ -114,7 +116,12 @@ extension PlayerModel {
         startTrack(queue[max(0, index - 1)])
     }
 
-    func stop() {
+    func stop(preservingSession: Bool = false) {
+        if !preservingSession { clearPlaybackSession() }
+        clearPlaybackState()
+    }
+
+    private func clearPlaybackState() {
         if playing { sampleListening(at: engine.currentTime) }
         listeningSession = ListeningSession()
         timer = nil
@@ -133,12 +140,131 @@ extension PlayerModel {
         playing ? engine.meterLevels() : (0, 0)
     }
 
+    // MARK: Восстановление сеанса
+
+    /// Сохраняем точную позицию движка, включая время между обновлениями индикатора.
+    func savePlaybackSession() {
+        guard restorePlaybackOnLaunch, let current = current, engine.isLoaded else { return }
+        let snapshot = PlaybackSession(current: current, position: engine.currentTime, queue: queue,
+                                       openTracks: openTracks, source: playbackSource, librarySection: librarySectionStart,
+                                       shuffleOrder: shuffleEnabled ? shuffleOrder : nil)
+        do { try playbackSessionStore.save(snapshot) }
+        catch { playbackSessionLogger.error("Could not save playback session: \(error.localizedDescription)") }
+    }
+
+    func clearPlaybackSession() {
+        do { try playbackSessionStore.clear() }
+        catch { playbackSessionLogger.error("Could not clear playback session: \(error.localizedDescription)") }
+    }
+
+    /// В очереди сохраняется порядок прошлого сеанса. Записи из медиатеки
+    /// получают актуальные данные и закладки по своему идентификатору.
+    func restorePlaybackSession() {
+        guard restorePlaybackOnLaunch, current == nil, !importing else { return }
+        let stored: PlaybackSession?
+        do { stored = try playbackSessionStore.load() }
+        catch {
+            playbackSessionLogger.error("Could not read playback session: \(error.localizedDescription)")
+            return
+        }
+        guard let snapshot = stored else { return }
+        openTracks = snapshot.openTracks.filter { Track.accepts($0.url) }
+        let known = Dictionary((playlists.flatMap(\.tracks) + folders.flatMap(\.tracks) + openTracks)
+            .map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        queue = snapshot.queue.map { known[$0.id] ?? $0 }.filter { Track.accepts($0.url) }
+        playbackSource = snapshot.source
+        librarySectionStart = snapshot.librarySection
+        if case .container(let id) = playbackSource {
+            if tracks(in: id) == nil { playbackSource = .snapshot }
+            else { selectedID = id }
+        }
+
+        let original = known[snapshot.current.id] ?? snapshot.current
+        // Если файл исчез, пробуем ближайший следующий, затем предыдущий.
+        let index = queue.firstIndex { $0.id == original.id }
+        let tail = index.map { queue.suffix(from: $0 + 1) } ?? queue[...]
+        let head = index.map { queue.prefix(upTo: $0) } ?? []
+        for track in [original] + tail + head.reversed() {
+            guard let info = try? engine.load(resolvedURL(of: track)) else { continue }
+            if shuffleEnabled {
+                if track.id == original.id, let savedOrder = snapshot.shuffleOrder {
+                    shuffleOrder = savedOrder
+                    shuffleOrder.update(queue.map(\.id), current: track.id)
+                } else {
+                    shuffleOrder.reset(queue.map(\.id), startingAt: track.id)
+                }
+            }
+            setNowPlaying(track, info: info)
+            configureAudio()
+            let storedPosition = track.id == original.id && snapshot.position.isFinite ? snapshot.position : 0
+            seek(storedPosition)
+            return
+        }
+    }
+
     // MARK: События AudioEngine
 
     /// Аудиоустройство пропало, и продолжить воспроизведение не удалось.
-    func playbackLost() {
+    func playbackLost(_ cause: Error) {
+        let track = current
         stop()
-        error = strings.errorAudioDevice
+        error = track.map { strings.errorPlay($0.title, AudioDecoding.message(cause, strings: strings)) }
+            ?? strings.errorAudioDevice
+    }
+
+    func configureAudio() {
+        if let current = current { engine.configurePlayback(audioPlan(for: current)) }
+    }
+
+    func trackTransitioned(_ boundary: AudioStreamBoundary, position: Double) {
+        guard let previous = current else { return }
+        if playing { sampleListening(at: duration) }
+        listeningSession = ListeningSession()
+        if shuffleEnabled && repeatMode != .track {
+            _ = shuffleOrder.advance(from: previous.id, repeatingQueue: false)
+        }
+        setNowPlaying(boundary.item.track, info: boundary.info)
+        self.position = position
+        if playing { resumeListening(at: position) }
+        engine.replenish(audioPlan(for: boundary.item.track), after: boundary.ordinal)
+    }
+
+    private func audioPlan(for track: Track) -> AudioStreamPlan {
+        var upcoming: [Track] = []
+        if audioOptions.usesTransitions {
+            if repeatMode == .track, queue.contains(where: { $0.id == track.id }) {
+                upcoming = Array(repeating: track, count: 8)
+            } else if shuffleEnabled {
+                var preview = shuffleOrder
+                var id = track.id
+                for _ in 0..<8 {
+                    // Следующий случайный цикл создаётся только обычным переходом.
+                    guard let next = preview.advance(from: id, repeatingQueue: false),
+                          let item = queue.first(where: { $0.id == next }) else { break }
+                    upcoming.append(item)
+                    id = next
+                }
+            } else if !queue.isEmpty {
+                let start = queue.firstIndex { $0.id == track.id }.map { $0 + 1 } ?? 0
+                for index in start..<(start + 8) {
+                    if index >= queue.count && repeatMode != .queue { break }
+                    upcoming.append(queue[index % queue.count])
+                }
+            }
+        }
+        func item(_ track: Track) -> AudioStreamItem {
+            AudioStreamItem(track: track, cachedGain: audioOptions.replayGain == .off ? nil : gainStore.values(for: track))
+        }
+        return AudioStreamPlan(current: item(track), upcoming: upcoming.map(item), options: audioOptions,
+                               equalizer: audioOptions.replayGain == .off ? EqualizerSettings() : equalizer)
+    }
+
+    private func setNowPlaying(_ track: Track, info: AudioEngine.Info) {
+        currentBitrate = info.bitrate
+        currentSampleRate = info.sampleRate
+        currentChannels = info.channels
+        current = track
+        duration = info.duration
     }
 
     // MARK: Внутреннее
@@ -151,21 +277,18 @@ extension PlayerModel {
 
     /// Смена файла не сбрасывает историю переходов внутри очереди.
     private func startTrack(_ track: Track) {
-        stop()
+        clearPlaybackState()
         do {
             let info = try engine.load(try resolvedURL(of: track))
-            currentBitrate = info.bitrate
-            currentSampleRate = info.sampleRate
-            currentChannels = info.channels
+            setNowPlaying(track, info: info)
+            configureAudio()
             guard engine.play() else { throw NSError(domain: "VibeWave", code: 1, userInfo: [NSLocalizedDescriptionKey: strings.errorAudioDevice]) }
-            current = track
-            duration = info.duration
             playing = true
             resumeListening(at: engine.currentTime)
             startTimer()
         } catch {
             stop()
-            self.error = strings.errorPlay(track.title, error.localizedDescription)
+            self.error = strings.errorPlay(track.title, AudioDecoding.message(error, strings: strings))
         }
     }
 
@@ -199,3 +322,5 @@ extension PlayerModel {
         }
     }
 }
+
+private let playbackSessionLogger = Logger(subsystem: "local.vibewave.player", category: "playback-session")

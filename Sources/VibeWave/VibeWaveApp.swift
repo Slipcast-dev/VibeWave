@@ -17,12 +17,16 @@ struct VibeWaveApp {
 }
 
 @MainActor
-final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSWindowDelegate {
     let model = PlayerModel()
     private var playerWindow: RetroWindowController?
     private var settingsWindow: NSWindowController?
     private var languageObserver: AnyCancellable?
     private var updater: Updater?
+    private let preferences = SettingsPreferences.shared
+    private let shortcuts = GlobalShortcuts()
+    private lazy var mediaControls = MediaKeyControls(model: model)
+    private var mediaObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installIcon()
@@ -31,11 +35,17 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         languageObserver = LanguageSettings.shared.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.installMenu() }
+        model.restorePlaybackSession()
         showPlayer()
+        shortcuts.start { [weak self] action in self?.performShortcut(action) }
+        mediaObserver = preferences.$mediaKeys
+            .sink { [weak self] enabled in
+                if enabled { self?.mediaControls.start() } else { self?.mediaControls.stop() }
+            }
         // Автообновление работает только у собранного приложения с ключом проверки в Info.plist.
         if let configuration = Updater.Configuration.fromMainBundle() {
             updater = Updater(model: model, configuration: configuration)
-            updater?.checkOnLaunch()
+            updater?.checkOnLaunch { [weak preferences] in preferences?.automaticUpdates == true }
         }
     }
 
@@ -50,8 +60,16 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        model.stop()
+        model.savePlaybackSession()
+        model.stop(preservingSession: true)
+        shortcuts.stop()
+        mediaControls.stop()
         updater?.installOnTerminate()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard preferences.quitOnClose, notification.object as? NSWindow === playerWindow?.window else { return }
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 
     func installIcon() {
@@ -63,7 +81,10 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     }
 
     private func showPlayer() {
-        if playerWindow == nil { playerWindow = RetroWindowController(model: model) }
+        if playerWindow == nil {
+            playerWindow = RetroWindowController(model: model)
+            playerWindow?.window?.delegate = self
+        }
         playerWindow?.present()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -128,15 +149,33 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
 
     @objc private func showSettings() {
         if settingsWindow == nil {
-            let view = SettingsView(model: model)
+            let view = SettingsView(model: model, preferences: preferences, shortcuts: shortcuts, updater: updater)
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
             window.title = model.strings.settingsTitle
             window.center()
             settingsWindow = NSWindowController(window: window)
         }
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func performShortcut(_ action: ShortcutAction) {
+        switch action {
+        case .playPause: model.toggle()
+        case .stop: model.stop()
+        case .next: model.next()
+        case .previous: model.previous()
+        case .seekForward: if model.current != nil { model.seek(model.engine.currentTime + 5) }
+        case .seekBackward: if model.current != nil { model.seek(model.engine.currentTime - 5) }
+        case .volumeUp: model.adjustVolume(by: 0.05)
+        case .volumeDown: model.adjustVolume(by: -0.05)
+        case .mute: model.muted.toggle()
+        case .repeatMode: model.cycleRepeat()
+        case .shuffle: model.shuffleEnabled.toggle()
+        case .showWindow: showPlayer()
+        }
     }
 
     @objc private func toggleShuffle() { model.shuffleEnabled.toggle() }

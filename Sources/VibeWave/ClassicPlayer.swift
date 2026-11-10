@@ -23,7 +23,13 @@ struct ClassicPlayerPanel: View {
                         .background(theme.background).retroBevel(theme, sunken: true)
                     info
                     HStack(spacing: 6) {
-                        Image(systemName: "speaker.wave.1").font(.system(size: 10))
+                        Button { model.muted.toggle() } label: {
+                            Image(systemName: model.muted ? "speaker.slash" : "speaker.wave.1")
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .help(muteLabel)
+                        .accessibilityLabel(muteLabel)
                         RetroSlider(value: $model.volume, theme: theme)
                             .frame(minWidth: 70).help(s.volume).accessibilityLabel(s.volume)
                         Text(s.balanceShort).font(.custom("Arial", size: 10).weight(.bold)).help(s.balance)
@@ -42,6 +48,11 @@ struct ClassicPlayerPanel: View {
         .background(theme.panel).retroBevel(theme)
     }
 
+    private var muteLabel: String {
+        if languages.language == .ru { return model.muted ? "Включить звук" : "Выключить звук" }
+        return model.muted ? "Unmute" : "Mute"
+    }
+
     // MARK: ЖК-экран
 
     private var display: some View {
@@ -50,7 +61,7 @@ struct ClassicPlayerPanel: View {
                 VStack(spacing: 5) {
                     Image(systemName: statusIcon).font(.system(size: 9, weight: .black))
                         .foregroundColor(model.current == nil ? theme.shadow : theme.accent)
-                    Text(model.currentChannels >= 2 ? "ST" : model.currentChannels == 1 ? "MO" : "  ")
+                    Text(channelIndicator)
                         .font(.custom("Arial", size: 8).weight(.bold)).foregroundColor(theme.secondary)
                         .lineLimit(1).fixedSize()
                 }.frame(width: 16)
@@ -87,6 +98,15 @@ struct ClassicPlayerPanel: View {
         return "\(number)\(track.title) (\(timeLabel(track.duration)))"
     }
 
+    private var channelIndicator: String {
+        switch model.currentChannels {
+        case 0: return "  "
+        case 1: return "MO"
+        case 2: return "ST"
+        default: return "MC"
+        }
+    }
+
     private var info: some View {
         HStack(spacing: 5) {
             field(model.currentBitrate > 0 ? "\(model.currentBitrate)" : "", width: 36)
@@ -94,8 +114,12 @@ struct ClassicPlayerPanel: View {
             field(model.currentSampleRate > 0 ? "\(Int((model.currentSampleRate / 1000).rounded()))" : "", width: 26)
             Text("kHz")
             Spacer(minLength: 2)
-            Text(s.mono).foregroundColor(model.currentChannels == 1 ? theme.foreground : theme.shadow)
-            Text(s.stereo).foregroundColor(model.currentChannels >= 2 ? theme.foreground : theme.shadow)
+            if model.currentChannels > 2 {
+                Text(s.audioChannels(model.currentChannels))
+            } else {
+                Text(s.mono).foregroundColor(model.currentChannels == 1 ? theme.foreground : theme.shadow)
+                Text(s.stereo).foregroundColor(model.currentChannels == 2 ? theme.foreground : theme.shadow)
+            }
         }
         // Подписи не переносятся и не обрезаются в узком окне.
         .lineLimit(1)
@@ -140,13 +164,7 @@ struct ClassicPlayerPanel: View {
             .help(s.shuffle)
             .accessibilityLabel(s.shuffle)
             .accessibilityValue(model.shuffleEnabled ? s.on : s.off)
-            Button {
-                switch model.repeatMode {
-                case .off: model.repeatMode = .queue
-                case .queue: model.repeatMode = .track
-                case .track: model.repeatMode = .off
-                }
-            } label: {
+            Button { model.cycleRepeat() } label: {
                 Image(systemName: model.repeatMode == .track ? "repeat.1" : "repeat")
             }
             .buttonStyle(RetroButtonStyle(theme: theme, compact: true, width: 30, isOn: model.repeatMode != .off))
@@ -232,5 +250,20 @@ private struct SpectrumView: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+
+extension PlayerModel {
+    func cycleRepeat() {
+        switch repeatMode {
+        case .off: repeatMode = .queue
+        case .queue: repeatMode = .track
+        case .track: repeatMode = .off
+        }
+    }
+
+    func adjustVolume(by delta: Double) {
+        volume = min(1, max(0, volume + delta))
     }
 }

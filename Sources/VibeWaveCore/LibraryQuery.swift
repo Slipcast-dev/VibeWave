@@ -51,6 +51,8 @@ public struct LibraryQuery: Codable, Equatable, Sendable {
     public var rules: [QueryRule] = []
     public var matchAny = false
     public var sort: QueryField?
+    /// nil сохраняет наследование настроек поиска в старых данных.
+    public var preservesInputOrder: Bool?
     public var descending = false
     public var limit = 0
 

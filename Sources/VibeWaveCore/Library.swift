@@ -19,7 +19,7 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     }
 
     public static func accepts(_ url: URL) -> Bool {
-        url.isFileURL && ["mp3", "flac"].contains(url.pathExtension.lowercased())
+        AudioFormat(url: url) != nil
     }
 }
 

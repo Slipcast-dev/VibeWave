@@ -7,13 +7,33 @@ public enum RepeatMode: String, CaseIterable {
 
 /// Случайный порядок хранится отдельно от ручного порядка плейлиста.
 /// Возврат назад воспроизводит пройденные переходы и сохраняет ещё не сыгранные треки.
-public struct ShuffleOrder {
+public struct ShuffleOrder: Codable {
     private var past: [UUID] = []
     private var forward: [UUID] = []
     private var pending: ArraySlice<UUID> = []
     private var members: Set<UUID> = []
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case past, forward, pending, members }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        past = try container.decode([UUID].self, forKey: .past)
+        forward = try container.decode([UUID].self, forKey: .forward)
+        pending = try container.decode([UUID].self, forKey: .pending)[...]
+        members = try container.decode(Set<UUID>.self, forKey: .members)
+    }
+
+    /// ArraySlice нужен для дешёвого извлечения начала очереди в памяти.
+    /// В файл попадают только ещё не проигранные элементы среза.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(past, forKey: .past)
+        try container.encode(forward, forKey: .forward)
+        try container.encode(Array(pending), forKey: .pending)
+        try container.encode(members, forKey: .members)
+    }
 
     public var next: UUID? { forward.last ?? pending.first }
 

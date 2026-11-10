@@ -72,6 +72,7 @@ struct TrackContextMenu: View {
         Text(s.source(sourceName))
         Divider()
         Button(s.trackInfo) { model.editTags(for: [track]) }
+            .disabled(AudioFormat(url: track.url)?.readsTags != true)
         Menu(s.trackRating) {
             ForEach(0...5, id: \.self) { stars in
                 let title = stars == 0 ? s.noRating : s.ratingStars(stars)

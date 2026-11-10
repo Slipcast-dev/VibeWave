@@ -114,6 +114,7 @@ public struct Strings: Sendable {
     public let queryRemoveRule: String
     public let queryAddRule: String
     public let querySort: String
+    public let queryDefaultSort: String
     public let queryManualSort: String
     public let queryDescending: String
     public let queryLimit: String
@@ -249,6 +250,18 @@ public struct Strings: Sendable {
     public let errorFolderUnavailable: @Sendable (String) -> String
     public let errorPlaylistGone: String
     public let errorNoSupportedFiles: String
+    public let audioChannels: @Sendable (Int) -> String
+    public let audioFormatsTitle: String
+    public let audioFormatsHelp: String
+    public let audioFormatTagsReadWrite: String
+    public let audioFormatTagsRead: String
+    public let audioFormatPlaybackOnly: String
+    public let audioUnreadable: String
+    public let audioProtected: String
+    public let audioUnsupportedCodec: String
+    public let audioInvalid: String
+    public let audioEmpty: String
+    public let tagsViewOnly: String
     public let errorPlaylistDeletedDuringImport: String
     /// (первые имена, сколько ещё не показано)
     public let errorCouldNotOpen: @Sendable ([String], Int) -> String
@@ -357,6 +370,7 @@ public struct Strings: Sendable {
         queryRemoveRule: "Удалить условие",
         queryAddRule: "Добавить условие",
         querySort: "Сортировка",
+        queryDefaultSort: "По настройкам поиска",
         queryManualSort: "Ручной порядок",
         queryDescending: "По убыванию",
         queryLimit: "Предел треков, 0 — без предела",
@@ -453,7 +467,7 @@ public struct Strings: Sendable {
         outsidePlaylists: "Вне плейлистов",
         playlistLabel: "Плейлист:",
         addFileButton: "+ Файл",
-        addFilesHelp: "Добавить файлы MP3/FLAC",
+        addFilesHelp: "Добавить аудиофайлы",
         addFolderButton: "+ Папка",
         libraryButton: "Библиотека",
         libraryHelp: "Показать или скрыть плейлисты и папки",
@@ -516,9 +530,9 @@ public struct Strings: Sendable {
         hideFromFolder: "Скрыть из папки",
         removeFromList: "Убрать из списка",
         emptyPlaylist: "Добавьте музыку в плейлист",
-        emptyFolder: "В папке нет MP3 и FLAC",
+        emptyFolder: "В папке нет поддерживаемых аудиофайлов",
         emptyLibrary: "Добавьте музыку",
-        emptyHint: "Перетащите сюда файлы MP3 и FLAC или папку с музыкой",
+        emptyHint: "Перетащите сюда аудиофайлы или папку с музыкой",
         panelAddOutside: "Добавить музыку вне плейлистов",
         panelAddToPlaylist: "Добавить музыку в плейлист",
         progressFiles: "Чтение файлов",
@@ -531,7 +545,19 @@ public struct Strings: Sendable {
         errorFolderUnavailableShort: { "папка «\($0)» недоступна" },
         errorFolderUnavailable: { "Папка «\($0)» недоступна. Подключите диск и повторите обновление." },
         errorPlaylistGone: "Плейлист больше не существует.",
-        errorNoSupportedFiles: "Добавьте локальные файлы MP3 или FLAC.",
+        errorNoSupportedFiles: "Выберите локальный аудиофайл из списка форматов в настройках.",
+        audioChannels: { "\($0) кан." },
+        audioFormatsTitle: "Аудиоформаты",
+        audioFormatsHelp: "Расширение определяет тип файла. При импорте VibeWave проверяет, может ли macOS прочитать звуковой поток.",
+        audioFormatTagsReadWrite: "Чтение и запись тегов и обложек",
+        audioFormatTagsRead: "Теги и обложки только для чтения",
+        audioFormatPlaybackOnly: "Воспроизведение",
+        audioUnreadable: "Файл отсутствует или недоступен для чтения.",
+        audioProtected: "Защищённые аудиофайлы и файлы M4P не поддерживаются.",
+        audioUnsupportedCodec: "macOS не поддерживает кодек этого файла.",
+        audioInvalid: "Файл повреждён или не содержит распознаваемого аудио.",
+        audioEmpty: "В файле нет звуковых данных.",
+        tagsViewOnly: "Для этого формата теги и обложка доступны только для просмотра.",
         errorPlaylistDeletedDuringImport: "Плейлист был удалён во время добавления файлов.",
         errorCouldNotOpen: { names, more in
             "Не удалось открыть: " + names.joined(separator: ", ") + (more > 0 ? " и ещё \(more)" : "")
@@ -632,6 +658,7 @@ public struct Strings: Sendable {
         queryRemoveRule: "Remove Rule",
         queryAddRule: "Add Rule",
         querySort: "Sort By",
+        queryDefaultSort: "Use Search Settings",
         queryManualSort: "Original Order",
         queryDescending: "Descending",
         queryLimit: "Track Limit, 0 for No Limit",
@@ -728,7 +755,7 @@ public struct Strings: Sendable {
         outsidePlaylists: "Not in Playlists",
         playlistLabel: "Playlist:",
         addFileButton: "+ File",
-        addFilesHelp: "Add MP3/FLAC files",
+        addFilesHelp: "Add audio files",
         addFolderButton: "+ Folder",
         libraryButton: "Library",
         libraryHelp: "Show or hide playlists and folders",
@@ -791,9 +818,9 @@ public struct Strings: Sendable {
         hideFromFolder: "Hide from Folder",
         removeFromList: "Remove from List",
         emptyPlaylist: "Add music to this playlist",
-        emptyFolder: "No MP3 or FLAC files in this folder",
+        emptyFolder: "No supported audio files in this folder",
         emptyLibrary: "Add some music",
-        emptyHint: "Drop MP3 and FLAC files or a music folder here",
+        emptyHint: "Drop audio files or a music folder here",
         panelAddOutside: "Add Music Outside Playlists",
         panelAddToPlaylist: "Add Music to Playlist",
         progressFiles: "Reading files",
@@ -806,7 +833,19 @@ public struct Strings: Sendable {
         errorFolderUnavailableShort: { "folder “\($0)” is unavailable" },
         errorFolderUnavailable: { "Folder “\($0)” is unavailable. Connect the drive and refresh again." },
         errorPlaylistGone: "The playlist no longer exists.",
-        errorNoSupportedFiles: "Add local MP3 or FLAC files.",
+        errorNoSupportedFiles: "Choose a local audio file from the formats listed in Settings.",
+        audioChannels: { "\($0) ch" },
+        audioFormatsTitle: "Audio Formats",
+        audioFormatsHelp: "The extension identifies the file type. On import, VibeWave checks whether macOS can read the audio stream.",
+        audioFormatTagsReadWrite: "Read and write tags and artwork",
+        audioFormatTagsRead: "Read-only tags and artwork",
+        audioFormatPlaybackOnly: "Playback",
+        audioUnreadable: "The file is missing or cannot be read.",
+        audioProtected: "Protected audio and M4P files are unsupported.",
+        audioUnsupportedCodec: "macOS does not support the codec in this file.",
+        audioInvalid: "The file is damaged or does not contain recognizable audio.",
+        audioEmpty: "The file contains no audio frames.",
+        tagsViewOnly: "Tags and artwork in this format are available for viewing only.",
         errorPlaylistDeletedDuringImport: "The playlist was deleted while files were being added.",
         errorCouldNotOpen: { names, more in
             "Couldn’t open: " + names.joined(separator: ", ") + (more > 0 ? " and \(more) more" : "")

@@ -24,6 +24,7 @@ public struct AudioArtwork: Equatable, Sendable {
 public struct AudioMetadata: Sendable {
     public var fields: [AudioTagField: String] = [:]
     public var artwork: AudioArtwork?
+    public var replayGain = ReplayGainValues()
     public init() {}
 }
 
@@ -31,6 +32,8 @@ public struct AudioTagEdit: Sendable {
     public enum ArtworkChange: Sendable { case unchanged, remove, replace(AudioArtwork) }
     public var fields: [AudioTagField: String] = [:]
     public var artwork: ArtworkChange = .unchanged
+    /// nil сохраняет теги, структура заменяет все четыре поля, nil внутри неё удаляет поле.
+    public var replayGain: ReplayGainValues?
 
     public init() {}
 
@@ -39,7 +42,7 @@ public struct AudioTagEdit: Sendable {
         return true
     }
 
-    public var isEmpty: Bool { fields.isEmpty && !changesArtwork }
+    public var isEmpty: Bool { fields.isEmpty && !changesArtwork && replayGain == nil }
 }
 
 /// Работа с ограниченным объёмом метаданных. При записи аудиопоток
@@ -47,13 +50,15 @@ public struct AudioTagEdit: Sendable {
 public enum AudioMetadataFile {
     public enum Failure: Error {
         case unsupportedLayout, damaged, tooLarge, changedDuringWrite, readOnly
-        case invalidField(AudioTagField)
+        case invalidField(AudioTagField), invalidReplayGain
     }
 
     static let maximumMetadata = 32 * 1024 * 1024
 
     public static func read(_ url: URL, includeArtwork: Bool = true) throws -> AudioMetadata {
-        guard url.isFileURL, MusicFiles.isRegularFile(url) else { throw Failure.unsupportedLayout }
+        guard let format = AudioFormat(url: url), format.readsTags,
+              MusicFiles.isRegularFile(url) else { throw Failure.unsupportedLayout }
+        if format == .mpeg4 { return try MPEG4Metadata.read(url, includeArtwork: includeArtwork) }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         return try readContainer(url, file).metadata(includeArtwork: includeArtwork)
@@ -61,6 +66,8 @@ public enum AudioMetadataFile {
 
     public static func write(_ edit: AudioTagEdit, to fileURL: URL) throws -> AudioMetadata {
         guard !edit.isEmpty else { return try read(fileURL) }
+        guard AudioFormat(url: fileURL)?.writesTags == true else { throw Failure.unsupportedLayout }
+        guard edit.replayGain?.isValid != false else { throw Failure.invalidReplayGain }
         for (field, value) in edit.fields {
             guard !value.contains("\0"), value.utf8.count <= 65_536 else { throw Failure.invalidField(field) }
             if value.isEmpty { continue }
@@ -126,9 +133,9 @@ public enum AudioMetadataFile {
     }
 
     private static func readContainer(_ url: URL, _ file: FileHandle) throws -> AudioTagContainer {
-        switch url.pathExtension.lowercased() {
-        case "mp3": return try MP3Tag(file: file)
-        case "flac": return try FLACTag(file: file)
+        switch AudioFormat(url: url) {
+        case .mp3: return try MP3Tag(file: file)
+        case .flac: return try FLACTag(file: file)
         default: throw Failure.unsupportedLayout
         }
     }

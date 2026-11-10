@@ -32,6 +32,7 @@ enum TrackTagAccess {
         case .tooLarge: return strings.tagsTooLarge
         case .changedDuringWrite: return strings.tagsChanged
         case .readOnly: return strings.tagsReadOnly
+        case .invalidReplayGain: return strings.tagsDamaged
         case .invalidField(let field): return strings.invalidTagField(strings.tagFieldName(field))
         case nil: return error.localizedDescription
         }
@@ -91,17 +92,26 @@ extension PlayerModel {
     /// поэтому успешные записи остаются сохранёнными даже при частичной ошибке.
     func writeTags(_ edit: AudioTagEdit, tracks: [Track], job: ImportJob,
                    progress: @escaping (Int) -> Void, completion: @escaping ([String], Int) -> Void) {
-        guard !writingTags, !edit.isEmpty, !tracks.isEmpty else { completion([], 0); return }
+        writeTagEdits(tracks.map { ($0, edit) }, job: job, progress: progress, completion: completion)
+    }
+
+    func writeTagEdits(_ edits: [(Track, AudioTagEdit)], job: ImportJob,
+                       validate: @escaping @Sendable (Track, URL) throws -> Void = { _, _ in },
+                       progress: @escaping (Int) -> Void, completion: @escaping ([String], Int) -> Void) {
+        let edits = edits.filter { !$0.1.isEmpty }
+        guard !writingTags, !edits.isEmpty else { completion([], 0); return }
         writingTags = true
         let strings = strings
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var updates: [UpdatedTrackTags] = []
             var failures: [String] = []
-            for (index, track) in tracks.enumerated() {
+            for (index, entry) in edits.enumerated() {
+                let (track, edit) = entry
                 if job.isCancelled { break }
                 do {
                     let updated = try TrackTagAccess.withURL(track) { url in
                         _ = try AVAudioFile(forReading: url)
+                        try validate(track, url)
                         let result = try AudioMetadataFile.write(edit, to: url)
                         let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil,
                                                             relativeTo: nil)
@@ -114,7 +124,7 @@ extension PlayerModel {
                 } catch {
                     failures.append("\(track.title): \(TrackTagAccess.message(error, strings: strings))")
                 }
-                if job.shouldReport(final: index + 1 == tracks.count) {
+                if job.shouldReport(final: index + 1 == edits.count) {
                     DispatchQueue.main.async { progress(index + 1) }
                 }
             }

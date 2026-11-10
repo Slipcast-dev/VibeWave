@@ -1,6 +1,6 @@
 [Русский](README.md) · **English**
 
-![VibeWave — a minimal MP3/FLAC player for macOS](docs/assets/vibewave-banner-en.svg)
+![VibeWave — a minimal audio player for macOS](docs/assets/vibewave-banner-en.svg)
 
 [![Version 2.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
@@ -12,7 +12,7 @@
 
 # VibeWave
 
-A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the only network request is the update check on GitHub at launch.
+A lightweight local audio player for **macOS 13+** for MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, and AU. Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the app connects to GitHub to check for and download updates.
 
 [Download v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
@@ -21,12 +21,12 @@ A lightweight local audio player for **macOS 13+** that plays MP3 and FLAC. Wind
 - Play, pause, stop, previous/next track, seeking, volume and balance.
 - Shuffle, repeat queue, and repeat track. Change modes in the player, the Playback menu, or Settings (`⌘,`).
 - Import and export M3U, M3U8, and PLS. Drop playlists into the player, or use relative paths to move a playlist with its music.
-- MP3/FLAC tags and artwork, batch editing, local star ratings, and configurable listening history.
+- MP3/FLAC tag and artwork editing, read-only MPEG-4 Audio tags, local star ratings, and configurable listening history.
 - Section and library search, filters, sorting, and saved smart playlists.
 - **Equalizer:** 10 bands (32 Hz – 16 kHz, ±12 dB), preamp and 9 presets; the **EQ** button sits to the right of the playback controls.
 - Compact Windows 95–style player: time display, scrolling title, kbps/kHz and level meter, with the playlist below.
 - “All Music”: playlists, folders and music outside playlists in one list, grouped by playlist or not.
-- Music folders (MP3 and FLAC, including subfolders) with scan progress and cancel.
+- Music folders (including subfolders) with scan progress and cancel.
 - Your own playback order by dragging rows; moving tracks between playlists.
 - A temporary queue outside playlists: opening music never creates a playlist on its own.
 - **Russian and English interface:** the language follows the system; the **RU ▾ / EN ▾** button switches it without a restart.
@@ -62,11 +62,13 @@ Versions before 2.0 cannot update themselves: install 2.0 manually once, and fro
 
 ## Auto-update
 
-- Every time VibeWave starts, it reads `update.json` from the latest GitHub release in the background. Without a network connection nothing happens.
-- When a new version is out, it asks **“Update”** or **“Later”**. “Later” asks again on the next launch. There are no settings.
+- In **Settings → Updates**, turn launch checks on or off or select **Check Now**.
+- If a compatible update is available, VibeWave offers **Update** or **Later**.
 - After “Update” the archive downloads in the background and is verified: SHA-256, the developer’s Ed25519 signature, bundle identifier, version and code signature. A forged update is never installed.
 - If nothing is playing, VibeWave replaces itself and restarts right away. If music is playing, it waits until playback stops; if you quit first, the new version is installed on quit.
 - Updating works when VibeWave lives in Applications or another folder on disk; it is off when the app runs straight from the disk image. If you cannot write to the app’s folder, macOS asks for an administrator password.
+
+The local stage 8 build is saved as `dist/VibeWave-Stage-8.app`. See the [handoff](HANDOFF.md) for acceptance results and hardware checks.
 
 ## Building from source
 
@@ -89,17 +91,18 @@ The DMG, PKG, ZIP, `SHA256SUMS.txt` and a signed `update.json` appear in `.relea
 
 ## Usage
 
-1. Click **“+ File”** at the bottom left, or drop MP3/FLAC files onto the window.
+1. Click **“+ File”** at the bottom left, or drop audio files onto the window.
 2. To create a playlist, open **“Library”** and click **`+`** next to “Playlists”.
 3. Select a playlist and add music to it. Drag a track from the queue onto a playlist, or choose **“Add to Playlist”** from the context menu.
 4. **“Library”** shows All Music, playlists and folders. The **“View ▾”** menu switches between “Single List” and “By Playlist”. Add folders with **“+ Folder”** or by dragging them from Finder; while files are being added, progress and a **“Cancel”** button appear at the bottom right.
 5. Drag a **track row** and drop it before another row, or in the empty area at the bottom to move it to the end. “Move Up/Move Down” are also in the context menu.
 6. Click the time display to switch between elapsed and remaining time.
-7. **EQ** at the right end of the ⏮ ▶ ❚❚ ■ ⏭ row opens the equalizer: bands, preamp, “On”, “Presets ▾” and “Reset”. Changes are heard immediately and are saved.
-8. **RU ▾ / EN ▾** next to “View” chooses the language: “System”, “Русский” or “English”. By default VibeWave uses the macOS language: Russian if it comes before English in the language list, otherwise English.
-9. The **Repeat** button cycles through off, queue, and track. The **Shuffle** button works independently.
+7. **EQ** at the right end of the ⏮ ▶ ❚❚ ■ ⏭ row opens the equalizer. Use “Presets → Manage Presets” to save your bands and preamp or transfer a preset as JSON.
+8. **Settings → Audio** controls ReplayGain, gapless playback and crossfade. You can analyze the current view and separately confirm writing ReplayGain tags to MP3/FLAC files.
+9. **RU ▾ / EN ▾** next to “View” chooses the language: “System”, “Русский” or “English”. By default VibeWave uses the macOS language: Russian if it comes before English in the language list, otherwise English.
+10. The **Repeat** button cycles through off, queue, and track. The **Shuffle** button works independently.
 
-**Keyboard shortcuts:** Space — play/pause; `⌘O` — add files; `⌘W` — close the window; `⌘M` — minimize; `⌘Q` — quit. After closing the window, click the Dock icon to open it again.
+**Keyboard shortcuts:** Space — play/pause; `⌘O` — add files; `⌘W` — close the window; `⌘M` — minimize; `⌘Q` — quit. Use **Settings → Shortcuts** to enable and assign global shortcuts or control system media keys. **General** offers paused queue restoration and an option to quit when closing the player window.
 
 ## Data
 

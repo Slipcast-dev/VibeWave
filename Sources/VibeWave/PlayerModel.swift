@@ -20,7 +20,7 @@ struct LibrarySection: Identifiable {
 }
 
 /// Откуда строится очередь: конкретный источник или общий список «Вся музыка».
-enum PlaybackSource: Equatable {
+enum PlaybackSource: Equatable, Codable {
     case container(UUID?)
     case library
     case snapshot
@@ -68,6 +68,14 @@ final class PlayerModel: NSObject, ObservableObject {
     var queryTags: [URL: [AudioTagField: String]] = [:]
     @Published var current: Track?
     @Published var playing = false
+    @Published var restorePlaybackOnLaunch: Bool {
+        didSet {
+            guard restorePlaybackOnLaunch != oldValue else { return }
+            playbackDefaults.set(restorePlaybackOnLaunch, forKey: "playback.restoreSession")
+            if restorePlaybackOnLaunch { savePlaybackSession() }
+            else { clearPlaybackSession() }
+        }
+    }
     @Published var shuffleEnabled: Bool {
         didSet {
             guard shuffleEnabled != oldValue else { return }
@@ -77,6 +85,7 @@ final class PlayerModel: NSObject, ObservableObject {
             } else {
                 shuffleOrder = ShuffleOrder()
             }
+            configureAudio()
         }
     }
     @Published var playlistFileOptions: PlaylistFileOptions {
@@ -100,12 +109,32 @@ final class PlayerModel: NSObject, ObservableObject {
     }
     @Published private(set) var listeningActivity = ListeningActivity() { didSet { scheduleQueries() } }
     @Published var repeatMode: RepeatMode {
-        didSet { playbackDefaults.set(repeatMode.rawValue, forKey: "playback.repeat") }
+        didSet {
+            playbackDefaults.set(repeatMode.rawValue, forKey: "playback.repeat")
+            configureAudio()
+        }
     }
+    @Published var audioOptions: AudioPlaybackOptions {
+        didSet {
+            var validated = audioOptions
+            validated.validate()
+            if validated != audioOptions { audioOptions = validated }
+            if let data = try? JSONEncoder().encode(audioOptions) { playbackDefaults.set(data, forKey: "playback.audio") }
+            configureAudio()
+        }
+    }
+    @Published var gainProgress: (done: Int, total: Int)?
+    @Published var gainReport: String?
+    var gainJob: ImportJob?
+    let gainStore: ReplayGainStore
+    let userEqualizerPresets: EqualizerPresetLibrary
     @Published var position: Double = 0
     @Published var duration: Double = 0
     @Published var volume: Double = 0.75 {
-        didSet { engine.volume = Float(volume) }
+        didSet { engine.volume = muted ? 0 : Float(volume) }
+    }
+    @Published var muted = false {
+        didSet { engine.volume = muted ? 0 : Float(volume) }
     }
     /// Баланс каналов: -1 левый, 0 центр, 1 правый.
     @Published var balance: Double = 0 {
@@ -115,6 +144,7 @@ final class PlayerModel: NSObject, ObservableObject {
     @Published var equalizer = PlayerModel.loadEqualizer() {
         didSet {
             engine.equalizer = equalizer
+            if audioOptions.replayGain != .off { configureAudio() }
             if let data = try? JSONEncoder().encode(equalizer) { UserDefaults.standard.set(data, forKey: Self.equalizerKey) }
         }
     }
@@ -131,6 +161,7 @@ final class PlayerModel: NSObject, ObservableObject {
     @Published var importProgress: ImportProgress?
 
     let engine: AudioEngine
+    let playbackSessionStore: PlaybackSessionStore
     var importJob: ImportJob?
     var timer: AnyCancellable?
     var queue: [Track] = []
@@ -152,6 +183,14 @@ final class PlayerModel: NSObject, ObservableObject {
     /// Отдельный каталог позволяет проверять переносы и миграцию, не трогая библиотеку пользователя.
     init(supportDirectory support: URL, playbackDefaults: UserDefaults = .standard) {
         self.playbackDefaults = playbackDefaults
+        restorePlaybackOnLaunch = playbackDefaults.bool(forKey: "playback.restoreSession")
+        playbackSessionStore = PlaybackSessionStore(url: support.appendingPathComponent("VibeWave/playback-session.json"))
+        userEqualizerPresets = EqualizerPresetLibrary(defaults: playbackDefaults)
+        gainStore = ReplayGainStore(url: support.appendingPathComponent("VibeWave/replaygain.json"))
+        var audio = playbackDefaults.data(forKey: "playback.audio")
+            .flatMap { try? JSONDecoder().decode(AudioPlaybackOptions.self, from: $0) } ?? AudioPlaybackOptions()
+        audio.validate()
+        audioOptions = audio
         let search = playbackDefaults.data(forKey: "search.options")
             .flatMap { try? JSONDecoder().decode(SearchOptions.self, from: $0) } ?? SearchOptions()
         searchOptions = search
@@ -172,7 +211,8 @@ final class PlayerModel: NSObject, ObservableObject {
         engine.volume = Float(volume)
         engine.equalizer = equalizer
         engine.onFinish = { [weak self] in self?.trackFinished() }
-        engine.onFailure = { [weak self] _ in self?.playbackLost() }
+        engine.onFailure = { [weak self] error in self?.playbackLost(error) }
+        engine.onTransition = { [weak self] boundary, position in self?.trackTransitioned(boundary, position: position) }
         engine.onRecovered = { [weak self] position in self?.resumeListening(at: position) }
         do {
             // При первом запуске нового имени читаем прежнюю библиотеку без её удаления.

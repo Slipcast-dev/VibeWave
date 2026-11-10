@@ -23,6 +23,8 @@ struct TagEditorView: View {
     @State private var progress = 0
     @State private var total = 0
     @State private var message: String?
+    @State private var confirmingSave = false
+    @ObservedObject private var preferences = SettingsPreferences.shared
     private var s: Strings { languages.strings }
 
     init(model: PlayerModel, tracks: [Track]) {
@@ -31,7 +33,13 @@ struct TagEditorView: View {
         _selected = State(initialValue: Set(tracks.map(\.id)))
     }
 
-    private var selection: [Track] { tracks.filter { selected.contains($0.id) && !failed.contains($0.id) } }
+    private func isWritable(_ track: Track) -> Bool { AudioFormat(url: track.url)?.writesTags == true }
+
+    private var selection: [Track] {
+        tracks.filter { selected.contains($0.id) && !failed.contains($0.id) && (tracks.count == 1 || isWritable($0)) }
+    }
+
+    private var canWrite: Bool { selection.contains(where: isWritable) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -46,7 +54,7 @@ struct TagEditorView: View {
                                 if value { selected.insert(track.id) } else { selected.remove(track.id) }
                             }))
                             .lineLimit(1)
-                            .disabled(failed.contains(track.id))
+                            .disabled(failed.contains(track.id) || !isWritable(track))
                         }
                     }
                 }
@@ -65,14 +73,19 @@ struct TagEditorView: View {
                         Image(systemName: "photo").font(.system(size: 32)).foregroundColor(.secondary)
                             .frame(width: 104, height: 104).accessibilityLabel(s.trackArtwork)
                     }
-                    Button(s.chooseArtwork) { chooseArtwork() }
-                    Button(s.removeArtwork) { preview = nil; edits.artwork = .remove }
+                    if canWrite {
+                        Button(s.chooseArtwork) { chooseArtwork() }
+                        Button(s.removeArtwork) { preview = nil; edits.artwork = .remove }
+                    }
                 }
                 .frame(minWidth: 125)
             }
             .disabled(reading || job != nil || selection.isEmpty)
 
-            Text(s.tagEditHelp).font(.caption).foregroundColor(.secondary)
+            if canWrite { Text(s.tagEditHelp).font(.caption).foregroundColor(.secondary) }
+            if tracks.contains(where: { AudioFormat(url: $0.url)?.readsTags == true && !isWritable($0) }) {
+                Text(s.tagsViewOnly).font(.caption).foregroundColor(.secondary)
+            }
             if !failed.isEmpty { Text(s.tagsUnreadableCount(failed.count)).font(.caption) }
             if let message = message {
                 ScrollView { Text(message).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 65)
@@ -86,15 +99,20 @@ struct TagEditorView: View {
                 }
                 .disabled(cancelled)
                 .keyboardShortcut(.cancelAction)
-                Button(s.save) { save() }
+                Button(s.save) { if preferences.confirmTagEdits { confirmingSave = true } else { save() } }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(reading || readingArtwork || job != nil || edits.isEmpty || selection.isEmpty)
+                    .disabled(reading || readingArtwork || job != nil || edits.isEmpty || !canWrite)
             }
         }
         .padding(18)
         .frame(width: 580)
         .interactiveDismissDisabled(job != nil)
         .task { await load() }
+        .alert(languages.language == .ru ? "Записать изменения в файлы?" : "Write changes to the files?",
+               isPresented: $confirmingSave) {
+            Button(s.cancel, role: .cancel) {}
+            Button(s.save) { save() }
+        }
     }
 
     private func fieldRow(_ field: AudioTagField) -> some View {
@@ -106,6 +124,7 @@ struct TagEditorView: View {
                 edits.fields[field] = enabled ? baseline : nil
             }))
             .frame(width: 132, alignment: .leading)
+            .disabled(!canWrite)
             TextField(mixed && edits.fields[field] == nil ? s.mixedTags : s.tagFieldName(field),
                       text: Binding(get: { edits.fields[field] ?? baseline }, set: { edits.fields[field] = $0 }))
                 .disabled(edits.fields[field] == nil)
@@ -114,6 +133,7 @@ struct TagEditorView: View {
 
     private func load() async {
         let tracks = tracks
+        let includeArtwork = preferences.showArtwork && tracks.count == 1
         let task = Task.detached(priority: .userInitiated) {
             var fields: [UUID: [AudioTagField: String]] = [:]
             var failed = Set<UUID>()
@@ -121,7 +141,7 @@ struct TagEditorView: View {
             for track in tracks {
                 if Task.isCancelled { break }
                 do {
-                    let metadata = try TrackTagAccess.withURL(track) { try AudioMetadataFile.read($0, includeArtwork: tracks.count == 1) }
+                    let metadata = try TrackTagAccess.withURL(track) { try AudioMetadataFile.read($0, includeArtwork: includeArtwork) }
                     fields[track.id] = metadata.fields
                     if let art = metadata.artwork { thumbnail = TrackTagAccess.thumbnail(art.data) }
                 } catch {
@@ -158,7 +178,8 @@ struct TagEditorView: View {
     }
 
     private func save() {
-        let files = selection
+        let files = selection.filter(isWritable)
+        guard !files.isEmpty else { return }
         let work = ImportJob()
         job = work
         message = nil

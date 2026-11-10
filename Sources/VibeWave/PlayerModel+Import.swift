@@ -15,7 +15,7 @@ extension PlayerModel {
         panel.title = targetID == nil ? strings.panelAddOutside : strings.panelAddToPlaylist
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [UTType(filenameExtension: "mp3"), UTType(filenameExtension: "flac")].compactMap { $0 }
+        panel.allowedContentTypes = AudioFormat.allCases.flatMap(\.contentTypes)
             + PlaylistFileFormat.allCases.map(\.contentType)
         guard panel.runModal() == .OK else { return }
         receiveFiles(panel.urls, into: targetID)
@@ -75,12 +75,13 @@ extension PlayerModel {
         let fresh = urls.filter { url in !folders.contains { $0.url.standardizedFileURL == url.standardizedFileURL } }
         guard !fresh.isEmpty else { error = strings.errorFolderAlreadyAdded; return }
         let job = beginJob(fresh.count == 1 ? .folder(fresh[0].lastPathComponent) : .folders(fresh.count))
+        let strings = strings
         let unavailable = strings.errorFolderUnavailableShort
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let scanned = try? fresh.map { url -> (MusicFolder?, [String]) in
                 let bookmark = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-                guard let scan = try MediaScanner.scanFolder(url, bookmark: nil, job: job, progress: progress) else {
+                guard let scan = try MediaScanner.scanFolder(url, bookmark: nil, strings: strings, job: job, progress: progress) else {
                     return (nil, [unavailable(url.lastPathComponent)])
                 }
                 return (MusicFolder(url: url, bookmark: bookmark, tracks: scan.added.tracks), scan.added.failures)
@@ -101,9 +102,10 @@ extension PlayerModel {
         guard !importing, let folder = folders.first(where: { $0.id == id }) else { return }
         let known = Set(folder.tracks.map { $0.url.standardizedFileURL })
         let job = beginJob(.folder(folder.name))
+        let strings = strings
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let scan = try? MediaScanner.scanFolder(folder.url, bookmark: folder.bookmark, known: known, job: job, progress: progress)
+            let scan = try? MediaScanner.scanFolder(folder.url, bookmark: folder.bookmark, known: known, strings: strings, job: job, progress: progress)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.finishJob(job) else { return }
                 // Недоступная папка не очищается: список треков и их порядок сохраняются.
@@ -125,12 +127,12 @@ extension PlayerModel {
     func importURLs(_ urls: [URL], into targetID: UUID?, before destination: UUID? = nil, autoplay: Bool = false) {
         guard !importing else { return }
         guard tracks(in: targetID) != nil else { error = strings.errorPlaylistGone; return }
-        let supported = urls.filter { Track.accepts($0) && MusicFiles.isRegularFile($0) }
-        guard !supported.isEmpty else { error = strings.errorNoSupportedFiles; return }
+        guard !urls.isEmpty else { error = strings.errorNoSupportedFiles; return }
+        let strings = strings
         let job = beginJob(.files)
         let progress = progressHandler(for: job)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let batch = try? MediaScanner.readTracks(supported, job: job, progress: progress)
+            let batch = try? MediaScanner.readTracks(urls, strings: strings, job: job, progress: progress)
             DispatchQueue.main.async { [weak self] in
                 guard let self = self, self.finishJob(job), let batch = batch else { return }
                 self.apply(batch, into: targetID, before: destination, autoplay: autoplay)
@@ -154,9 +156,7 @@ extension PlayerModel {
                     if job.isCancelled { throw CancellationError() }
                     try result.read(url, options: options, strings: strings, job: job, progress: progress)
                 }
-                let supportedAudio = audio.filter { Track.accepts($0) && MusicFiles.isRegularFile($0) }
-                audioBatch = try MediaScanner.readTracks(supportedAudio, job: job, progress: progress)
-                if !audio.isEmpty && supportedAudio.isEmpty { result.failures.append(strings.errorNoSupportedFiles) }
+                audioBatch = try MediaScanner.readTracks(audio, strings: strings, job: job, progress: progress)
             } catch {
                 // Отменённая задача уже разблокировала интерфейс. Старый результат отбрасывается.
                 DispatchQueue.main.async { [weak self] in _ = self?.finishJob(job) }

@@ -49,7 +49,10 @@ extension PlayerModel {
             let text = self.searchText
             let cached = self.queryTags
             var filter = self.searchFilter
-            if filter.sort == nil, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { filter.sort = options.sort }
+            if filter.sort == nil, filter.preservesInputOrder != true,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                filter.sort = options.sort
+            }
             let query = filter
             let work = Task.detached(priority: .userInitiated) {
                 () -> ([URL: [AudioTagField: String]], [UUID: Int], [QueryRecord]) in

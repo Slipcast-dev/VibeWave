@@ -28,14 +28,23 @@ struct FLACTag: AudioTagContainer {
             values = []
         }
 
-        func updated(_ edits: [AudioTagField: String]) -> Data {
+        func updated(_ edits: [AudioTagField: String], replayGain: ReplayGainValues?) -> Data {
             var result = values.filter { value in
-                guard let key = Self.split(value)?.0, let field = FLACTag.field(for: key) else { return true }
+                guard let key = Self.split(value)?.0 else { return true }
+                if replayGain != nil && ReplayGainValues.Tag(rawValue: key) != nil { return false }
+                guard let field = FLACTag.field(for: key) else { return true }
                 return edits[field] == nil
             }
             for field in AudioTagField.allCases {
                 if let value = edits[field], !value.isEmpty {
                     result.append(Data("\(FLACTag.key(for: field))=\(value)".utf8))
+                }
+            }
+            if let replayGain = replayGain {
+                for tag in ReplayGainValues.Tag.allCases {
+                    if let value = replayGain.tagValue(tag) {
+                        result.append(Data("\(tag.rawValue)=\(value)".utf8))
+                    }
                 }
             }
             var data = Data()
@@ -87,9 +96,9 @@ struct FLACTag: AudioTagContainer {
     func metadata(includeArtwork: Bool) -> AudioMetadata {
         var result = AudioMetadata()
         for value in comment?.values ?? [] {
-            if let (key, text) = Comment.split(value), let field = Self.field(for: key), result.fields[field] == nil {
-                result.fields[field] = text
-            }
+            guard let (key, text) = Comment.split(value) else { continue }
+            if let field = Self.field(for: key), result.fields[field] == nil { result.fields[field] = text }
+            result.replayGain.readTag(key, value: text)
         }
         if includeArtwork {
             for block in blocks where block.kind == 6 {
@@ -103,8 +112,8 @@ struct FLACTag: AudioTagContainer {
 
     func applying(_ edit: AudioTagEdit) throws -> Data {
         var result = blocks
-        if !edit.fields.isEmpty {
-            let block = Block(kind: 4, data: (comment ?? Comment()).updated(edit.fields))
+        if !edit.fields.isEmpty || edit.replayGain != nil {
+            let block = Block(kind: 4, data: (comment ?? Comment()).updated(edit.fields, replayGain: edit.replayGain))
             if let index = result.firstIndex(where: { $0.kind == 4 }) { result[index] = block }
             else { result.append(block) }
         }

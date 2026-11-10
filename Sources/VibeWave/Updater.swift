@@ -2,16 +2,18 @@ import AppKit
 import Combine
 import VibeWaveCore
 
-/// Автообновление без настроек и отдельного интерфейса.
-///
-/// 1. При запуске в фоне читается `update.json` последнего релиза на GitHub.
-/// 2. Если версия новее, приложение спрашивает «Обновить» или «Позже» («Позже» — спросит при следующем запуске).
-/// 3. Архив скачивается в фоне и проверяется: SHA-256, подпись Ed25519, идентификатор, версия и подпись кода.
-/// 4. Если ничего не играет — приложение заменяется и перезапускается сразу; иначе ждёт остановки
-///    воспроизведения, а если пользователь завершит приложение раньше, обновление ставится при выходе.
-/// Сетевые ошибки не показываются: проверка повторится при следующем запуске.
+/// Ручная и автоматическая проверки используют одну загрузку и общую
+/// цепочку проверки подписи. Установка ждёт штатной остановки плеера.
 @MainActor
-final class Updater {
+final class Updater: ObservableObject {
+    enum Status: Equatable {
+        case idle, checking, noCompatibleUpdate, deferred, downloading, waitingForStop, failed
+    }
+
+    @Published private(set) var status: Status = .idle
+    var busy: Bool { status == .checking || status == .downloading || prepared != nil }
+    var currentVersion: String { configuration.currentVersion }
+
     struct Configuration {
         var feedURL: URL
         var publicKey: String
@@ -46,7 +48,7 @@ final class Updater {
     private var installing = false
     private var idleObserver: AnyCancellable?
 
-    init(model: PlayerModel, configuration: Configuration) {
+    init(model: PlayerModel, configuration: Configuration, session: URLSession? = nil) {
         self.model = model
         self.configuration = configuration
         let settings = URLSessionConfiguration.ephemeral
@@ -54,36 +56,52 @@ final class Updater {
         settings.timeoutIntervalForResource = 15 * 60
         settings.requestCachePolicy = .reloadIgnoringLocalCacheData
         settings.httpAdditionalHeaders = ["User-Agent": "VibeWave/\(configuration.currentVersion)"]
-        session = URLSession(configuration: settings)
+        self.session = session ?? URLSession(configuration: settings)
         workDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("VibeWave-Update", isDirectory: true)
     }
 
     private var strings: Strings { LanguageSettings.shared.strings }
 
-    /// Проверка при запуске: небольшая пауза, чтобы окно успело появиться.
-    func checkOnLaunch() {
+    /// Повторно проверяем настройку после задержки: её могли выключить сразу после запуска.
+    func checkOnLaunch(isEnabled: @escaping @MainActor () -> Bool) {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            await self?.check()
+            guard let self = self, self.status == .idle, isEnabled() else { return }
+            await self.check()
         }
     }
 
+    func checkNow() {
+        Task { [weak self] in await self?.check() }
+    }
+
     private func check() async {
-        guard let manifest = try? await fetchManifest(),
-              manifest.isOffered(currentVersion: configuration.currentVersion,
-                                 systemVersion: ProcessInfo.processInfo.operatingSystemVersion) else { return }
-        guard ask(manifest) else { return }
+        guard !busy else { return }
+        status = .checking
         do {
-            let app = try await download(manifest)
-            prepared = app
-            installWhenIdle()
-        } catch let failure as UpdateSignature.Failure {
-            // Подделанный или повреждённый архив — сообщаем: это не сбой сети.
-            model.error = strings.updateVerificationFailed(manifest.version) + " (\(failure))"
-        } catch let failure as UpdateInstaller.Failure where failure != .download {
-            model.error = strings.updateVerificationFailed(manifest.version) + " (\(failure.localizedDescription))"
+            let manifest = try await fetchManifest()
+            guard AppVersion(manifest.version) != nil, AppVersion(manifest.minimumSystemVersion) != nil,
+                  manifest.url.scheme == "https" else { throw UpdateInstaller.Failure.download }
+            guard manifest.isOffered(currentVersion: configuration.currentVersion,
+                                     systemVersion: ProcessInfo.processInfo.operatingSystemVersion) else {
+                status = .noCompatibleUpdate
+                return
+            }
+            guard ask(manifest) else { status = .deferred; return }
+            status = .downloading
+            do {
+                prepared = try await download(manifest)
+                status = .waitingForStop
+                installWhenIdle()
+            } catch let failure as UpdateSignature.Failure {
+                model.error = strings.updateVerificationFailed(manifest.version) + " (\(failure))"
+                status = .failed
+            } catch let failure as UpdateInstaller.Failure where failure != .download {
+                model.error = strings.updateVerificationFailed(manifest.version) + " (\(failure.localizedDescription))"
+                status = .failed
+            }
         } catch {
-            // Сеть недоступна: спросим снова при следующем запуске.
+            status = .failed
         }
     }
 
@@ -152,6 +170,8 @@ final class Updater {
                                                 relaunch: relaunch, workDirectory: workDirectory)
         } catch {
             installing = false
+            prepared = nil
+            status = .failed
             return
         }
         if relaunch { NSApp.terminate(nil) }

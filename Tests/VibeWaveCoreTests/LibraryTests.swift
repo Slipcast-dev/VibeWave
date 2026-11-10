@@ -5,7 +5,7 @@ final class LibraryTests: XCTestCase {
     func testFormatsAndDuplicates() {
         let url = URL(fileURLWithPath: "/tmp/song.FLAC")
         XCTAssertTrue(Track.accepts(url))
-        XCTAssertFalse(Track.accepts(URL(fileURLWithPath: "/tmp/song.wav")))
+        XCTAssertTrue(Track.accepts(URL(fileURLWithPath: "/tmp/song.wav")))
         XCTAssertFalse(Track.accepts(URL(string: "https://example.com/song.mp3")!))
         var playlist = Playlist(name: "Тест")
         playlist.append(Track(url: url, duration: 180))

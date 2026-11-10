@@ -43,8 +43,9 @@ struct PlaylistImportResult: Sendable {
                     continue
                 }
                 guard seen.insert(file.resolvingSymlinksInPath()).inserted else { continue }
-                guard Track.accepts(file) else {
-                    failures.append("\(name): \(strings.errorNoSupportedFiles) \(file.lastPathComponent)")
+                do { try AudioDecoding.validateExtension(file) }
+                catch {
+                    failures.append("\(name): \(file.lastPathComponent): \(AudioDecoding.message(error, strings: strings))")
                     continue
                 }
                 guard MusicFiles.isRegularFile(file) else {
@@ -56,7 +57,7 @@ struct PlaylistImportResult: Sendable {
                 candidates.append(file)
                 if let title = entry.title, !title.trimmingCharacters(in: .whitespaces).isEmpty { titles[file] = title }
             }
-            let batch = try MediaScanner.readTracks(candidates, job: job, progress: progress)
+            let batch = try MediaScanner.readTracks(candidates, strings: strings, job: job, progress: progress)
             failures += batch.failures
             if entries.isEmpty || !batch.tracks.isEmpty {
                 let tracks = batch.tracks.map { track -> Track in

@@ -76,7 +76,7 @@ enum MediaScanner {
     }
 
     /// Открывает файлы параллельно; порядок результата совпадает с порядком urls.
-    static func readTracks(_ urls: [URL], job: ImportJob, progress: Progress) throws -> Batch {
+    static func readTracks(_ urls: [URL], strings: Strings, job: ImportJob, progress: Progress) throws -> Batch {
         guard !urls.isEmpty else { return Batch() }
         var results = [Result<Track, Error>?](repeating: nil, count: urls.count)
         let counter = Counter()
@@ -95,7 +95,7 @@ enum MediaScanner {
         for (url, result) in zip(urls, results) {
             switch result {
             case .success(let track)?: batch.tracks.append(track)
-            case .failure(let error)?: batch.failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            case .failure(let error)?: batch.failures.append("\(url.lastPathComponent): \(AudioDecoding.message(error, strings: strings))")
             case nil: break
             }
         }
@@ -104,7 +104,7 @@ enum MediaScanner {
 
     /// nil — папка недоступна. known — стандартизованные URL уже известных треков:
     /// их не открываем повторно, поэтому обновление большой папки почти мгновенно.
-    static func scanFolder(_ folder: URL, bookmark: Data?, known: Set<URL> = [], job: ImportJob,
+    static func scanFolder(_ folder: URL, bookmark: Data?, known: Set<URL> = [], strings: Strings, job: ImportJob,
                            progress: Progress) throws -> FolderScan? {
         var root = folder
         if let data = bookmark {
@@ -117,7 +117,7 @@ enum MediaScanner {
         progress(0, nil)
         guard let files = try MusicFiles.collect(in: root, isCancelled: { job.isCancelled }) else { return nil }
         let fresh = files.filter { !known.contains($0.standardizedFileURL) }
-        return FolderScan(files: files, added: try readTracks(fresh, job: job, progress: progress))
+        return FolderScan(files: files, added: try readTracks(fresh, strings: strings, job: job, progress: progress))
     }
 
     /// Проверка файла тем же декодером (AVAudioFile), что и при воспроизведении.
@@ -125,7 +125,7 @@ enum MediaScanner {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let audio = try AVAudioFile(forReading: url)
+            let audio = try AudioDecoding.open(url)
             let rate = audio.processingFormat.sampleRate
             // В локальной сборке без App Sandbox app-scope key может отсутствовать:
             // необязательная закладка не должна отклонять исправную музыку.

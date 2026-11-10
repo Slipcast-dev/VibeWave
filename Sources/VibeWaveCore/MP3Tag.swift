@@ -59,6 +59,11 @@ struct MP3Tag: AudioTagContainer {
         result.fields = legacy
         var isFront = false
         for frame in frames where frame.flags & 0xFF == 0 {
+            if frame.id == "TXXX", let field = Self.replayGainField(frame.data),
+               let value = String(data: frame.data[field.start...], encoding: field.encoding) {
+                result.replayGain.readTag(field.tag.rawValue,
+                                          value: value.trimmingCharacters(in: CharacterSet(charactersIn: "\0")))
+            }
             if let field = Self.field(frame.id), result.fields[field] == nil {
                 if field == .comment {
                     if let value = Self.comment(frame.data), value.description.isEmpty { result.fields[field] = value.text }
@@ -77,6 +82,10 @@ struct MP3Tag: AudioTagContainer {
     func applying(_ edit: AudioTagEdit) throws -> Data {
         var updated: [Frame] = []
         for frame in frames {
+            if edit.replayGain != nil, frame.id == "TXXX", frame.flags & 0xFF == 0,
+               Self.replayGainField(frame.data) != nil {
+                continue
+            }
             if let field = Self.field(frame.id), edit.fields[field] != nil {
                 // Сохраняем дополнительные именованные комментарии.
                 if field != .comment { continue }
@@ -101,6 +110,18 @@ struct MP3Tag: AudioTagContainer {
             if field == .comment { payload.append(contentsOf: [0x65, 0x6E, 0x67, 0xFF, 0xFE, 0, 0]) }
             payload.append(value.data(using: .utf16) ?? Data())
             updated.append(Frame(id: frameID(for: field), flags: 0, data: payload))
+        }
+        if let replayGain = edit.replayGain {
+            for tag in ReplayGainValues.Tag.allCases {
+                guard let value = replayGain.tagValue(tag) else { continue }
+                // Ключ и значение ReplayGain лежат в ASCII, поэтому Latin-1
+                // одинаково читается в ID3v2.3 и ID3v2.4.
+                var payload = Data([0])
+                payload.append(contentsOf: tag.rawValue.utf8)
+                payload.append(0)
+                payload.append(contentsOf: value.utf8)
+                updated.append(Frame(id: "TXXX", flags: 0, data: payload))
+            }
         }
         if case .replace(let artwork) = edit.artwork {
             var payload = Data([0])
@@ -154,15 +175,18 @@ struct MP3Tag: AudioTagContainer {
         }
     }
 
-    private static func decode(_ data: Data, encoding: UInt8) -> String? {
-        let format: String.Encoding
+    private static func textEncoding(_ encoding: UInt8) -> String.Encoding? {
         switch encoding {
-        case 0: format = .isoLatin1
-        case 1: format = .utf16
-        case 2: format = .utf16BigEndian
-        case 3: format = .utf8
+        case 0: return .isoLatin1
+        case 1: return .utf16
+        case 2: return .utf16BigEndian
+        case 3: return .utf8
         default: return nil
         }
+    }
+
+    private static func decode(_ data: Data, encoding: UInt8) -> String? {
+        guard let format = textEncoding(encoding) else { return nil }
         return String(data: data, encoding: format)?.trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
     }
 
@@ -173,6 +197,23 @@ struct MP3Tag: AudioTagContainer {
             if data[index] == 0 && (width == 1 || data[index + 1] == 0) { return (index, index + width) }
         }
         return nil
+    }
+
+    private static func replayGainField(_ data: Data) -> (tag: ReplayGainValues.Tag, start: Int, encoding: String.Encoding)? {
+        guard let encoding = data.first, let format = textEncoding(encoding),
+              let (end, start) = terminator(in: data.prefix(128), from: 1, encoding: encoding) else {
+            return nil
+        }
+        let description = Data(data[1..<end])
+        guard let name = decode(description, encoding: encoding),
+              let tag = ReplayGainValues.Tag(rawValue: name.uppercased()) else { return nil }
+        // Некоторые редакторы ставят один BOM для обеих строк TXXX.
+        let prefix = data[start...].prefix(2)
+        if encoding == 1 && !prefix.elementsEqual([0xFF, 0xFE]) && !prefix.elementsEqual([0xFE, 0xFF]) {
+            if description.starts(with: [0xFF, 0xFE]) { return (tag, start, .utf16LittleEndian) }
+            if description.starts(with: [0xFE, 0xFF]) { return (tag, start, .utf16BigEndian) }
+        }
+        return (tag, start, format)
     }
 
     private static func comment(_ data: Data) -> (description: String, text: String)? {

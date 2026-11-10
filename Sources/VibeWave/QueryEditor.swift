@@ -66,6 +66,27 @@ struct QueryEditorView: View {
         }
     }
 
+    private enum FilterSort: Hashable { case inherited, manual, field(QueryField) }
+
+    private var filterSort: Binding<FilterSort> {
+        Binding(get: {
+            if let field = query.sort { return .field(field) }
+            return query.preservesInputOrder == true ? .manual : .inherited
+        }, set: { selection in
+            switch selection {
+            case .inherited:
+                query.sort = nil
+                query.preservesInputOrder = nil
+            case .manual:
+                query.sort = nil
+                query.preservesInputOrder = true
+            case .field(let field):
+                query.sort = field
+                query.preservesInputOrder = nil
+            }
+        })
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(editingList ? s.smartPlaylists : s.searchFilters).font(.headline)
@@ -110,7 +131,17 @@ struct QueryEditorView: View {
             .frame(minHeight: 70, maxHeight: 160)
             Button(s.queryAddRule) { query.rules.append(QueryRule()) }
             HStack {
-                QuerySortPicker(value: $query.sort)
+                if editingList {
+                    QuerySortPicker(value: $query.sort)
+                } else {
+                    Picker(s.querySort, selection: filterSort) {
+                        Text(s.queryDefaultSort).tag(FilterSort.inherited)
+                        Text(s.queryManualSort).tag(FilterSort.manual)
+                        ForEach(QueryField.allCases) { field in
+                            Text(s.queryFieldName(field.rawValue)).tag(FilterSort.field(field))
+                        }
+                    }
+                }
                 Toggle(s.queryDescending, isOn: $query.descending).disabled(query.sort == nil)
             }
             if editingList {
@@ -177,6 +208,7 @@ struct SearchSettingsView: View {
                 }
                 .onChange(of: model.searchOptions.scope) { model.searchScope = $0 }
                 QuerySortPicker(value: $model.searchOptions.sort)
+                Toggle(s.groupedList, isOn: $model.groupByPlaylists)
                 ForEach(QueryField.textSearchFields) { field in
                     Toggle(s.queryFieldName(field.rawValue), isOn: Binding(get: {
                         model.searchOptions.fields.contains(field)
@@ -184,6 +216,11 @@ struct SearchSettingsView: View {
                         if value { model.searchOptions.fields.insert(field) }
                         else if model.searchOptions.fields.count > 1 { model.searchOptions.fields.remove(field) }
                     }))
+                }
+                Button(language.language == .ru ? "Сбросить настройки поиска и вида" : "Reset search and view settings") {
+                    model.searchOptions = SearchOptions()
+                    model.searchScope = model.searchOptions.scope
+                    model.groupByPlaylists = false
                 }
                 Divider()
                 HStack {
