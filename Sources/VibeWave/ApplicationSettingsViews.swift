@@ -8,12 +8,12 @@ struct GeneralSettingsView: View {
     @ObservedObject private var languages = LanguageSettings.shared
 
     var body: some View {
-        Form {
-            Picker(label("Язык интерфейса", "Interface language"), selection: $languages.preference) {
-                Text(label("Как в системе", "System")).tag(LanguagePreference.system)
-                Text(AppLanguage.ru.nativeName).tag(LanguagePreference.ru)
-                Text(AppLanguage.en.nativeName).tag(LanguagePreference.en)
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            RetroChoice(title: label("Язык интерфейса", "Interface language"), selection: $languages.preference,
+                        options: [
+                            (.system, label("Как в системе", "System")),
+                            (.ru, AppLanguage.ru.nativeName), (.en, AppLanguage.en.nativeName)
+                        ])
             Toggle(label("Восстанавливать очередь и позицию при запуске",
                          "Restore queue and position at launch"), isOn: $model.restorePlaybackOnLaunch)
             Text(label("Трек откроется на паузе.", "The track opens paused."))
@@ -39,7 +39,7 @@ struct MetadataSettingsView: View {
     @ObservedObject private var languages = LanguageSettings.shared
 
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: 12) {
             Toggle(label("Загружать встроенную обложку в редакторе",
                          "Load embedded artwork in the tag editor"), isOn: $preferences.showArtwork)
             Toggle(label("Подтверждать запись тегов и обложек",

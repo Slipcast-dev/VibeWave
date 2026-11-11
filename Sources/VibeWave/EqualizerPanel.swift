@@ -52,7 +52,7 @@ struct EqualizerPanel: View {
                 UserEqualizerPresetsPanel(model: model, library: presets)
             }
         }
-        .font(.custom("Arial", size: 12))
+        .retroPanel()
         .foregroundColor(theme.foreground)
         .buttonStyle(RetroButtonStyle(theme: theme, toolbar: true))
         .padding(10)
@@ -154,11 +154,9 @@ private struct UserEqualizerPresetsPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
             if let selected = selected {
-                Picker(labels.collection, selection: Binding(get: { self.selected?.id }, set: { selectedID = $0 })) {
-                    ForEach(library.presets) { preset in
-                        Text(preset.name).tag(Optional(preset.id))
-                    }
-                }
+                RetroChoice(title: labels.collection,
+                            selection: Binding(get: { self.selected?.id }, set: { selectedID = $0 }),
+                            options: library.presets.map { (Optional($0.id), $0.name) })
                 .disabled(editing != nil || removing != nil || busy)
                 HStack {
                     Button(labels.apply) { model.equalizer = selected.settings }

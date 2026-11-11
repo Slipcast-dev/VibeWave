@@ -88,79 +88,70 @@ struct QueryEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(editingList ? s.smartPlaylists : s.searchFilters).font(.headline)
-            if editingList { TextField(s.playlistName, text: $name) }
-            Picker(s.queryMatch, selection: $query.matchAny) {
-                Text(s.queryMatchAll).tag(false)
-                Text(s.queryMatchAny).tag(true)
-            }
-            ScrollView {
-                VStack(spacing: 7) {
-                    ForEach($query.rules) { $rule in
-                        HStack {
-                            Picker(s.queryField, selection: $rule.field) {
-                                ForEach(QueryField.allCases) { field in
-                                    Text(s.queryFieldName(field.rawValue)).tag(field)
+        RetroDialog(title: editingList ? s.smartPlaylists : s.searchFilters) {
+            VStack(alignment: .leading, spacing: 10) {
+                if editingList { TextField(s.playlistName, text: $name) }
+                RetroChoice(title: s.queryMatch, selection: $query.matchAny,
+                            options: [(false, s.queryMatchAll), (true, s.queryMatchAny)])
+                ScrollView {
+                    VStack(spacing: 7) {
+                        ForEach($query.rules) { $rule in
+                            HStack {
+                                RetroChoice(title: s.queryField, selection: $rule.field,
+                                            options: QueryField.allCases.map { ($0, s.queryFieldName($0.rawValue)) },
+                                            showsTitle: false)
+                                    .frame(width: 132)
+                                    .onChange(of: rule.field) { field in
+                                        rule.operation = field.operators[0]
+                                        rule.value = ""
+                                    }
+                                RetroChoice(title: s.queryOperator, selection: $rule.operation,
+                                            options: rule.field.operators.map { ($0, s.queryOperatorName($0.rawValue)) },
+                                            showsTitle: false)
+                                    .frame(width: 154)
+                                TextField(s.queryValue, text: $rule.value).disabled(!rule.operation.requiresValue)
+                                Button {
+                                    query.rules.removeAll { $0.id == rule.id }
+                                } label: {
+                                    Image(systemName: "minus.circle")
                                 }
+                                .accessibilityLabel(s.queryRemoveRule)
                             }
-                            .labelsHidden()
-                            .frame(width: 132)
-                            .onChange(of: rule.field) { field in
-                                rule.operation = field.operators[0]
-                                rule.value = ""
-                            }
-                            Picker(s.queryOperator, selection: $rule.operation) {
-                                ForEach(rule.field.operators) { operation in
-                                    Text(s.queryOperatorName(operation.rawValue)).tag(operation)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 154)
-                            TextField(s.queryValue, text: $rule.value).disabled(!rule.operation.requiresValue)
-                            Button {
-                                query.rules.removeAll { $0.id == rule.id }
-                            } label: {
-                                Image(systemName: "minus.circle")
-                            }
-                            .accessibilityLabel(s.queryRemoveRule)
                         }
-                    }
+                    }.padding(8)
                 }
-            }
-            .frame(minHeight: 70, maxHeight: 160)
-            Button(s.queryAddRule) { query.rules.append(QueryRule()) }
-            HStack {
-                if editingList {
-                    QuerySortPicker(value: $query.sort)
-                } else {
-                    Picker(s.querySort, selection: filterSort) {
-                        Text(s.queryDefaultSort).tag(FilterSort.inherited)
-                        Text(s.queryManualSort).tag(FilterSort.manual)
-                        ForEach(QueryField.allCases) { field in
-                            Text(s.queryFieldName(field.rawValue)).tag(FilterSort.field(field))
-                        }
-                    }
-                }
-                Toggle(s.queryDescending, isOn: $query.descending).disabled(query.sort == nil)
-            }
-            if editingList {
+                .frame(maxWidth: .infinity)
+                .frame(height: 120)
+                .background(PlayerTheme.retro.background)
+                .retroBevel(.retro, sunken: true)
+                Button(s.queryAddRule) { query.rules.append(QueryRule()) }
                 HStack {
-                    Text(s.queryLimit)
-                    TextField("0", value: $query.limit, format: .number.grouping(.never))
-                        .frame(width: 70)
+                    if editingList {
+                        QuerySortPicker(value: $query.sort)
+                    } else {
+                        RetroChoice(title: s.querySort, selection: filterSort,
+                                    options: [(FilterSort.inherited, s.queryDefaultSort), (.manual, s.queryManualSort)] +
+                                        QueryField.allCases.map { (.field($0), s.queryFieldName($0.rawValue)) })
+                    }
+                    Toggle(s.queryDescending, isOn: $query.descending).disabled(query.sort == nil)
                 }
-            }
-            Text(s.queryUnits).font(.caption).foregroundColor(.secondary)
-            HStack {
-                Spacer()
-                Button(s.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(s.save) { save() }.keyboardShortcut(.defaultAction)
-                    .disabled(!query.isValid || (editingList && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                if editingList {
+                    HStack {
+                        Text(s.queryLimit)
+                        TextField("0", value: $query.limit, format: .number.grouping(.never))
+                            .frame(width: 70)
+                    }
+                }
+                Text(s.queryUnits).font(.caption).foregroundColor(.secondary)
+                HStack {
+                    Spacer()
+                    Button(s.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button(s.save) { save() }.keyboardShortcut(.defaultAction)
+                        .disabled(!query.isValid || (editingList && name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                }
             }
         }
-        .padding(16)
-        .frame(width: 600)
+        .frame(width: 640)
     }
 
     private func save() {
@@ -183,12 +174,9 @@ private struct QuerySortPicker: View {
 
     var body: some View {
         let s = language.strings
-        Picker(s.querySort, selection: $value) {
-            Text(s.queryManualSort).tag(Optional<QueryField>.none)
-            ForEach(QueryField.allCases) { field in
-                Text(s.queryFieldName(field.rawValue)).tag(Optional(field))
-            }
-        }
+        RetroChoice(title: s.querySort, selection: $value,
+                    options: [(nil, s.queryManualSort)] +
+                        QueryField.allCases.map { (Optional($0), s.queryFieldName($0.rawValue)) })
     }
 }
 
@@ -202,11 +190,9 @@ struct SearchSettingsView: View {
         let s = language.strings
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Picker(s.queryScope, selection: $model.searchOptions.scope) {
-                    Text(s.queryCurrentScope).tag(SearchScope.section)
-                    Text(s.allMusic).tag(SearchScope.library)
-                }
-                .onChange(of: model.searchOptions.scope) { model.searchScope = $0 }
+                RetroChoice(title: s.queryScope, selection: $model.searchOptions.scope,
+                            options: [(SearchScope.section, s.queryCurrentScope), (.library, s.allMusic)])
+                    .onChange(of: model.searchOptions.scope) { model.searchScope = $0 }
                 QuerySortPicker(value: $model.searchOptions.sort)
                 Toggle(s.groupedList, isOn: $model.groupByPlaylists)
                 ForEach(QueryField.textSearchFields) { field in

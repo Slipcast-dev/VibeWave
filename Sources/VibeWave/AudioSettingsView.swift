@@ -23,7 +23,7 @@ struct AudioSettingsView: View {
             VStack {
                 EqualizerPanel(model: model, theme: .retro)
                 Button(label("Закрыть", "Close")) { showEqualizer = false }.keyboardShortcut(.cancelAction)
-            }.padding(8)
+            }.padding(8).retroPanel()
         }
         .alert(label("Записать ReplayGain в файлы?", "Write ReplayGain to files?"), isPresented: $confirmWrite) {
             Button(languages.strings.cancel, role: .cancel) { writeSelection = [] }
@@ -39,17 +39,17 @@ struct AudioSettingsView: View {
 
     @ViewBuilder
     private var gainControls: some View {
-        Text("ReplayGain").font(.headline)
-        Picker(label("Режим", "Mode"), selection: $model.audioOptions.replayGain) {
-            Text(label("Выключен", "Off")).tag(ReplayGainMode.off)
-            Text(label("Трек", "Track")).tag(ReplayGainMode.track)
-            Text(label("Альбом", "Album")).tag(ReplayGainMode.album)
-        }
+        Text("ReplayGain").fontWeight(.bold)
+        RetroChoice(title: label("Режим", "Mode"), selection: $model.audioOptions.replayGain,
+                    options: [
+                        (.off, label("Выключен", "Off")), (.track, label("Трек", "Track")),
+                        (.album, label("Альбом", "Album"))
+                    ])
         Group {
-            Stepper(label("Предусиление", "Preamp") + ": \(Int(model.audioOptions.preamp)) dB",
-                    value: $model.audioOptions.preamp, in: -12...12)
-            Stepper(label("Если усиление неизвестно", "Missing gain") + ": \(Int(model.audioOptions.missingGain)) dB",
-                    value: $model.audioOptions.missingGain, in: -24...12)
+            RetroStepper(title: label("Предусиление", "Preamp") + ": \(Int(model.audioOptions.preamp)) dB",
+                    value: $model.audioOptions.preamp, range: -12...12)
+            RetroStepper(title: label("Если усиление неизвестно", "Missing gain") + ": \(Int(model.audioOptions.missingGain)) dB",
+                    value: $model.audioOptions.missingGain, range: -24...12)
             Toggle(label("Ограничивать усиление по пику", "Limit gain using sample peak"),
                    isOn: $model.audioOptions.preventClipping)
         }.disabled(model.audioOptions.replayGain == .off)
@@ -77,11 +77,11 @@ struct AudioSettingsView: View {
 
     @ViewBuilder
     private var transitionControls: some View {
-        Text(label("Переходы между треками", "Track transitions")).font(.headline)
+        Text(label("Переходы между треками", "Track transitions")).fontWeight(.bold)
         Toggle(label("Без пауз", "Gapless playback"), isOn: $model.audioOptions.gapless)
         let seconds = String(format: "%.1f", model.audioOptions.crossfade)
-        Stepper(label("Плавное сведение", "Crossfade") + ": " + seconds + label(" с", " s"),
-                value: $model.audioOptions.crossfade, in: 0.0...12.0, step: 0.5)
+        RetroStepper(title: label("Плавное сведение", "Crossfade") + ": " + seconds + label(" с", " s"),
+                value: $model.audioOptions.crossfade, range: 0.0...12.0, step: 0.5)
         Toggle(label("Не сводить треки одного альбома", "Skip crossfade within an album"),
                isOn: $model.audioOptions.preserveAlbums).disabled(model.audioOptions.crossfade == 0)
         Text(label("Переходы работают между треками с одинаковым форматом звукового потока.",

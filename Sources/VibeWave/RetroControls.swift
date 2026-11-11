@@ -52,6 +52,8 @@ struct RetroButtonStyle: ButtonStyle {
     var isOn = false
     /// Кнопка нижней панели: крупнее компактной, но ниже обычной.
     var toolbar = false
+    /// Поля выбора заполняют доступную ширину и обрезают длинное значение.
+    var expands = false
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         let sunken = configuration.isPressed || isOn
@@ -59,7 +61,8 @@ struct RetroButtonStyle: ButtonStyle {
             .font(.custom("Arial", size: compact && !toolbar ? 11 : 12))
             .lineLimit(1)
             // Текст не сжимается и не обрезается: кнопка растёт по его ширине.
-            .fixedSize()
+            .fixedSize(horizontal: !expands, vertical: true)
+            .frame(maxWidth: expands ? .infinity : nil, alignment: .leading)
             .foregroundColor(enabled ? theme.foreground : theme.secondary.opacity(0.6))
             .offset(x: sunken ? 1 : 0, y: sunken ? 1 : 0)
             .frame(width: width)
@@ -202,11 +205,20 @@ struct RetroMenuButton: View {
 
     let title: String
     let items: () -> [Item]
+    var showsDisclosure = false
     @State private var anchor = MenuAnchor()
 
     var body: some View {
-        Button { anchor.popUp(items()) } label: { Text(title) }
-            .background(MenuAnchorView(anchor: anchor))
+        Button { anchor.popUp(items()) } label: {
+            HStack(spacing: 8) {
+                Text(title).lineLimit(1)
+                if showsDisclosure {
+                    Spacer(minLength: 2)
+                    Text("▾")
+                }
+            }
+        }
+        .background(MenuAnchorView(anchor: anchor))
     }
 }
 

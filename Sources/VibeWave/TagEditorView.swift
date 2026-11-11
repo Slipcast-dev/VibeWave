@@ -42,70 +42,70 @@ struct TagEditorView: View {
     private var canWrite: Bool { selection.contains(where: isWritable) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(tracks.count == 1 ? s.trackInfo : s.batchTags).font(.headline)
-            if tracks.count == 1, let track = tracks.first {
-                Text(track.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
-                        ForEach(tracks) { track in
-                            Toggle(track.title, isOn: Binding(get: { selected.contains(track.id) }, set: { value in
-                                if value { selected.insert(track.id) } else { selected.remove(track.id) }
-                            }))
-                            .lineLimit(1)
-                            .disabled(failed.contains(track.id) || !isWritable(track))
+        RetroDialog(title: tracks.count == 1 ? s.trackInfo : s.batchTags) {
+            VStack(alignment: .leading, spacing: 10) {
+                if tracks.count == 1, let track = tracks.first {
+                    Text(track.url.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(tracks) { track in
+                                Toggle(track.title, isOn: Binding(get: { selected.contains(track.id) }, set: { value in
+                                    if value { selected.insert(track.id) } else { selected.remove(track.id) }
+                                }))
+                                .lineLimit(1)
+                                .disabled(failed.contains(track.id) || !isWritable(track))
+                            }
                         }
                     }
+                    .frame(height: 104)
                 }
-                .frame(height: 104)
-            }
 
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(AudioTagField.allCases) { field in fieldRow(field) }
-                }
-                VStack(spacing: 6) {
-                    if let preview = preview {
-                        Image(nsImage: preview).resizable().scaledToFit()
-                            .frame(width: 104, height: 104).accessibilityLabel(s.trackArtwork)
-                    } else {
-                        Image(systemName: "photo").font(.system(size: 32)).foregroundColor(.secondary)
-                            .frame(width: 104, height: 104).accessibilityLabel(s.trackArtwork)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(AudioTagField.allCases) { field in fieldRow(field) }
                     }
-                    if canWrite {
-                        Button(s.chooseArtwork) { chooseArtwork() }
-                        Button(s.removeArtwork) { preview = nil; edits.artwork = .remove }
+                    VStack(spacing: 6) {
+                        if let preview = preview {
+                            Image(nsImage: preview).resizable().scaledToFit()
+                                .frame(width: 104, height: 104).accessibilityLabel(s.trackArtwork)
+                        } else {
+                            Image(systemName: "photo").font(.system(size: 32)).foregroundColor(.secondary)
+                                .frame(width: 104, height: 104).accessibilityLabel(s.trackArtwork)
+                        }
+                        if canWrite {
+                            Button(s.chooseArtwork) { chooseArtwork() }
+                            Button(s.removeArtwork) { preview = nil; edits.artwork = .remove }
+                        }
                     }
+                    .frame(minWidth: 125)
                 }
-                .frame(minWidth: 125)
-            }
-            .disabled(reading || job != nil || selection.isEmpty)
+                .disabled(reading || job != nil || selection.isEmpty)
 
-            if canWrite { Text(s.tagEditHelp).font(.caption).foregroundColor(.secondary) }
-            if tracks.contains(where: { AudioFormat(url: $0.url)?.readsTags == true && !isWritable($0) }) {
-                Text(s.tagsViewOnly).font(.caption).foregroundColor(.secondary)
-            }
-            if !failed.isEmpty { Text(s.tagsUnreadableCount(failed.count)).font(.caption) }
-            if let message = message {
-                ScrollView { Text(message).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 65)
-            }
-            HStack {
-                if reading || readingArtwork { ProgressView().controlSize(.small) }
-                if job != nil { Text(s.progressCount(s.save, progress, total)).font(.caption) }
-                Spacer()
-                Button(job == nil ? s.cancel : s.stopTagWrite) {
-                    if let job = job { job.cancel(); cancelled = true } else { dismiss() }
+                if canWrite { Text(s.tagEditHelp).font(.caption).foregroundColor(.secondary) }
+                if tracks.contains(where: { AudioFormat(url: $0.url)?.readsTags == true && !isWritable($0) }) {
+                    Text(s.tagsViewOnly).font(.caption).foregroundColor(.secondary)
                 }
-                .disabled(cancelled)
-                .keyboardShortcut(.cancelAction)
-                Button(s.save) { if preferences.confirmTagEdits { confirmingSave = true } else { save() } }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(reading || readingArtwork || job != nil || edits.isEmpty || !canWrite)
+                if !failed.isEmpty { Text(s.tagsUnreadableCount(failed.count)).font(.caption) }
+                if let message = message {
+                    ScrollView { Text(message).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 65)
+                }
+                HStack {
+                    if reading || readingArtwork { ProgressView().controlSize(.small) }
+                    if job != nil { Text(s.progressCount(s.save, progress, total)).font(.caption) }
+                    Spacer()
+                    Button(job == nil ? s.cancel : s.stopTagWrite) {
+                        if let job = job { job.cancel(); cancelled = true } else { dismiss() }
+                    }
+                    .disabled(cancelled)
+                    .keyboardShortcut(.cancelAction)
+                    Button(s.save) { if preferences.confirmTagEdits { confirmingSave = true } else { save() } }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(reading || readingArtwork || job != nil || edits.isEmpty || !canWrite)
+                }
             }
         }
-        .padding(18)
-        .frame(width: 580)
+        .frame(width: 620)
         .interactiveDismissDisabled(job != nil)
         .task { await load() }
         .alert(languages.language == .ru ? "Записать изменения в файлы?" : "Write changes to the files?",

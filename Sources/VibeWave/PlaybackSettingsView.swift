@@ -10,38 +10,66 @@ struct SettingsView: View {
     let updater: Updater?
     @ObservedObject private var languages = LanguageSettings.shared
 
+    @State private var section = 0
+    @State private var soundSection = 0
+    @State private var librarySection = 0
+
     var body: some View {
-        TabView {
-            GeneralSettingsView(model: model, preferences: preferences)
-                .tabItem { Text(label("Общие", "General")) }
-            soundSettings.tabItem { Text(label("Звук", "Audio")) }
-            librarySettings.tabItem { Text(label("Медиатека", "Library")) }
-            MetadataSettingsView(preferences: preferences)
-                .tabItem { Text(label("Метаданные и обложки", "Metadata & Artwork")) }
-            shortcutSettings.tabItem { Text(label("Горячие клавиши", "Shortcuts")) }
-            UpdateSettingsView(preferences: preferences, updater: updater)
-                .tabItem { Text(label("Обновления", "Updates")) }
+        HStack(alignment: .top, spacing: 10) {
+            RetroSettingsTabs(selection: $section, titles: [
+                label("Общие", "General"), label("Звук", "Audio"), label("Медиатека", "Library"),
+                label("Метаданные и обложки", "Metadata & Artwork"),
+                label("Горячие клавиши", "Shortcuts"), label("Обновления", "Updates")
+            ], vertical: true)
+            .frame(width: 175)
+            Group {
+                switch section {
+                case 0: GeneralSettingsView(model: model, preferences: preferences)
+                case 1: soundSettings
+                case 2: librarySettings
+                case 3: MetadataSettingsView(preferences: preferences)
+                case 4: shortcutSettings
+                default: UpdateSettingsView(preferences: preferences, updater: updater)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .retroBevel(.retro, sunken: true)
         }
-        .padding(12)
-        .frame(width: 700, height: 480)
+        .padding(10)
+        .frame(width: 760, height: 490)
+        .retroPanel()
     }
 
     private var soundSettings: some View {
         let strings = languages.strings
-        return TabView {
-            AudioSettingsView(model: model).tabItem { Text(label("Обработка звука", "Audio Processing")) }
-            PlaybackSettingsView(model: model).tabItem { Text(strings.menuPlayback) }
-            AudioFormatsSettingsView().tabItem { Text(strings.audioFormatsTitle) }
-        }.padding(10)
+        return VStack(alignment: .leading, spacing: 8) {
+            RetroSettingsTabs(selection: $soundSection, titles: [
+                label("Обработка звука", "Audio Processing"), strings.menuPlayback, strings.audioFormatsTitle
+            ])
+            Group {
+                switch soundSection {
+                case 0: AudioSettingsView(model: model)
+                case 1: PlaybackSettingsView(model: model)
+                default: AudioFormatsSettingsView()
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }.padding(8)
     }
 
     private var librarySettings: some View {
         let strings = languages.strings
-        return TabView {
-            SearchSettingsView(model: model).tabItem { Text(strings.searchTracks) }
-            PlaylistFileSettingsView(model: model).tabItem { Text(strings.playlists) }
-            ListeningSettingsView(model: model).tabItem { Text(strings.listeningHistory) }
-        }.padding(10)
+        return VStack(alignment: .leading, spacing: 8) {
+            RetroSettingsTabs(selection: $librarySection, titles: [
+                strings.searchTracks, strings.playlists, strings.listeningHistory
+            ])
+            Group {
+                switch librarySection {
+                case 0: SearchSettingsView(model: model)
+                case 1: PlaylistFileSettingsView(model: model)
+                default: ListeningSettingsView(model: model)
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }.padding(8)
     }
 
     private var shortcutSettings: some View {
@@ -67,14 +95,10 @@ struct PlaybackSettingsView: View {
     var body: some View {
         let strings = languages.strings
         VStack(alignment: .leading, spacing: 12) {
-            Text(strings.menuPlayback).font(.headline)
+            Text(strings.menuPlayback).fontWeight(.bold)
             Toggle(strings.shuffle, isOn: $model.shuffleEnabled)
-            Picker(strings.repeatLabel, selection: $model.repeatMode) {
-                ForEach(RepeatMode.allCases, id: \.self) { mode in
-                    Text(strings.repeatModeName(mode)).tag(mode)
-                }
-            }
-            .pickerStyle(.menu)
+            RetroChoice(title: strings.repeatLabel, selection: $model.repeatMode,
+                        options: RepeatMode.allCases.map { ($0, strings.repeatModeName($0)) })
             Button(strings.resetPlaybackSettings) {
                 model.shuffleEnabled = false
                 model.repeatMode = .off
@@ -95,21 +119,12 @@ private struct PlaylistFileSettingsView: View {
     var body: some View {
         let strings = languages.strings
         VStack(alignment: .leading, spacing: 12) {
-            Picker(strings.playlistExportFormat, selection: $model.playlistFileOptions.format) {
-                ForEach(PlaylistFileFormat.allCases, id: \.self) { format in
-                    Text(format.label).tag(format)
-                }
-            }
-            Picker(strings.playlistExportEncoding, selection: $model.playlistFileOptions.exportEncoding) {
-                ForEach(PlaylistFileEncoding.allCases, id: \.self) { encoding in
-                    Text(encoding.label).tag(encoding)
-                }
-            }
-            Picker(strings.playlistLegacyEncoding, selection: $model.playlistFileOptions.legacyImportEncoding) {
-                ForEach(PlaylistFileEncoding.allCases, id: \.self) { encoding in
-                    Text(encoding.label).tag(encoding)
-                }
-            }
+            RetroChoice(title: strings.playlistExportFormat, selection: $model.playlistFileOptions.format,
+                        options: PlaylistFileFormat.allCases.map { ($0, $0.label) })
+            RetroChoice(title: strings.playlistExportEncoding, selection: $model.playlistFileOptions.exportEncoding,
+                        options: PlaylistFileEncoding.allCases.map { ($0, $0.label) })
+            RetroChoice(title: strings.playlistLegacyEncoding, selection: $model.playlistFileOptions.legacyImportEncoding,
+                        options: PlaylistFileEncoding.allCases.map { ($0, $0.label) })
             Text(strings.playlistEncodingHelp).font(.caption).foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Toggle(strings.playlistRelativePaths, isOn: $model.playlistFileOptions.relativePaths)
@@ -131,15 +146,16 @@ private struct ListeningSettingsView: View {
         let strings = languages.strings
         VStack(alignment: .leading, spacing: 8) {
             Toggle(strings.listeningEnabled, isOn: $model.listeningOptions.enabled)
-            Stepper(strings.listeningThreshold(model.listeningOptions.thresholdSeconds),
-                    value: $model.listeningOptions.thresholdSeconds, in: 1...300)
+            RetroStepper(title: strings.listeningThreshold(model.listeningOptions.thresholdSeconds),
+                         value: Binding(get: { Double(model.listeningOptions.thresholdSeconds) },
+                                        set: { model.listeningOptions.thresholdSeconds = Int($0) }),
+                         range: 1...300)
                 .disabled(!model.listeningOptions.enabled)
             Text(strings.listeningThresholdHelp).font(.caption).foregroundColor(.secondary)
-            Picker(strings.listeningRetention, selection: $model.listeningOptions.retentionDays) {
-                ForEach([7, 30, 90, 365, 0], id: \.self) { days in
-                    Text(days == 0 ? strings.listeningForever : strings.listeningDays(days)).tag(days)
-                }
-            }
+            RetroChoice(title: strings.listeningRetention, selection: $model.listeningOptions.retentionDays,
+                        options: [7, 30, 90, 365, 0].map {
+                            ($0, $0 == 0 ? strings.listeningForever : strings.listeningDays($0))
+                        })
             Divider()
             if model.listeningActivity.events.isEmpty {
                 Text(strings.listeningEmpty).foregroundColor(.secondary)
@@ -204,6 +220,39 @@ private struct AudioFormatsSettingsView: View {
                     }
                 }
             }.padding(14)
+        }
+    }
+}
+
+
+/// Переключатели разделов повторяют прямоугольные кнопки основной панели.
+@MainActor
+private struct RetroSettingsTabs: View {
+    @Binding var selection: Int
+    let titles: [String]
+    var vertical = false
+
+    var body: some View {
+        Group {
+            if vertical {
+                VStack(alignment: .leading, spacing: 5) { buttons }
+            } else {
+                HStack(spacing: 4) { buttons }
+            }
+        }
+    }
+
+    private var buttons: some View {
+        ForEach(titles.indices, id: \.self) { index in
+            Button { selection = index } label: {
+                Text(titles[index])
+                    .lineLimit(vertical ? 2 : 1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: vertical ? 155 : nil, alignment: .leading)
+            }
+            .buttonStyle(RetroButtonStyle(theme: .retro, isOn: selection == index, toolbar: true))
+            .accessibilityAddTraits(selection == index ? .isSelected : [])
         }
     }
 }
