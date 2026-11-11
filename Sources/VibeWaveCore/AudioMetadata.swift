@@ -59,6 +59,7 @@ public enum AudioMetadataFile {
         guard let format = AudioFormat(url: url), format.readsTags,
               MusicFiles.isRegularFile(url) else { throw Failure.unsupportedLayout }
         if format == .mpeg4 { return try MPEG4Metadata.read(url, includeArtwork: includeArtwork) }
+        if format == .ogg { return try OggTag.read(url, includeArtwork: includeArtwork) }
         let file = try FileHandle(forReadingFrom: url)
         defer { try? file.close() }
         return try readContainer(url, file).metadata(includeArtwork: includeArtwork)

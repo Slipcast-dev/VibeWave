@@ -27,7 +27,7 @@ public enum LoudnessAnalyzer {
         let hasAccess = url.startAccessingSecurityScopedResource()
         defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
         guard url.isFileURL, MusicFiles.isRegularFile(url) else { throw Failure.unreadableFile }
-        let file = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let file = try AudioPCMSources.openFloat32(url)
         let format = file.processingFormat
         let rate = format.sampleRate
         guard (1...2).contains(format.channelCount), (8_000...384_000).contains(rate) else {

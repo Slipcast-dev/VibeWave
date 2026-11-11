@@ -2,26 +2,26 @@
 
 ![VibeWave — минималистичный аудиоплеер для macOS](docs/assets/vibewave-banner.svg)
 
-[![Версия 2.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)
+[![Версия 2.1.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Русский и английский](docs/assets/badges/languages.svg)
 ![Swift 5.8+](docs/assets/badges/swift.svg)
-[![Звёзды](docs/assets/badges/stars.svg)](https://github.com/Slipcast-dev/VibeWave/stargazers)
+[![Звёзды](docs/assets/badges/stars.svg)](https://github.com/Slipcast-dev/VibeWave)
 [![Скачивания](docs/assets/badges/downloads.svg)](https://github.com/Slipcast-dev/VibeWave/releases)
 
 # VibeWave
 
-Лёгкий локальный аудиоплеер для **macOS 13+** с поддержкой MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF и AU. Интерфейс в стиле Windows 95, 10-полосный эквалайзер, русский и английский языки, автообновление. Без аккаунтов и сторонних зависимостей; единственный сетевой запрос — проверка обновлений на GitHub при запуске или вручную.
+Лёгкий локальный аудиоплеер для **macOS 13+** с поддержкой MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU и Ogg (Opus, Vorbis). Интерфейс в стиле Windows 95, 10-полосный эквалайзер, русский и английский языки, автообновление. Без аккаунтов и сторонних зависимостей; единственный сетевой запрос — проверка обновлений на GitHub при запуске или вручную.
 
-[Скачать v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Полная документация](DOCUMENTATION.md) · [Промт разработки](DEVELOPMENT_PROMPT.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Скачать v2.1.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0) · [Полная документация](DOCUMENTATION.md) · [Промт разработки](DEVELOPMENT_PROMPT.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Возможности
 
 - Воспроизведение, пауза, стоп, предыдущий/следующий трек, перемотка, громкость и баланс.
 - Перемешивание и повтор очереди или трека. Режимы доступны в панели плеера, меню «Воспроизведение» и настройках (`⌘,`).
 - Импорт и экспорт M3U, M3U8 и PLS. Плейлисты можно перетащить в плеер, а относительные пути позволяют переносить список вместе с музыкой.
-- Правка тегов и обложек MP3/FLAC, просмотр тегов MPEG-4 Audio, оценки 0–5 звёзд и настраиваемая история.
+- Правка тегов и обложек MP3/FLAC, просмотр тегов MPEG-4 Audio и Ogg, оценки 0–5 звёзд и настраиваемая история.
 - Поиск в разделе и медиатеке, фильтры, сортировка и сохраняемые умные списки.
 - **Эквалайзер:** 10 полос (32 Гц – 16 кГц, ±12 дБ), предусиление и 9 пресетов; кнопка **EQ** справа от кнопок управления.
 - Компактный плеер в стиле Windows 95: табло со временем, бегущая строка, kbps/kHz и индикатор уровня, плейлист под ним.
@@ -49,11 +49,11 @@
 
 ![Информация о релизе: Apple Silicon и Intel, ad hoc подпись](docs/assets/release-banner.svg)
 
-**[Релиз v2.0.0 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
+**[Релиз v2.1.0 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
 
-- `VibeWave-2.0.0-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
-- `VibeWave-2.0.0-macos-universal.pkg` — мастер установки в `/Applications`.
-- `VibeWave-2.0.0-macos-universal.zip` — архив приложения.
+- `VibeWave-2.1.0-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
+- `VibeWave-2.1.0-macos-universal.pkg` — мастер установки в `/Applications`.
+- `VibeWave-2.1.0-macos-universal.zip` — архив приложения.
 - `SHA256SUMS.txt` — контрольные суммы. Проверка в папке загрузки: `shasum -a 256 -c SHA256SUMS.txt`.
 
 Подпись локальная **ad hoc**, нотариализация Apple не выполнена. При первом запуске macOS покажет предупреждение: разрешите открытие в «Системных настройках» → «Конфиденциальность и безопасность». Не отключайте защиту macOS целиком.

@@ -14,12 +14,12 @@ enum AudioDecoding {
         guard AudioFormat(url: url) != nil else { throw Failure.unsupportedFile }
     }
 
-    static func open(_ url: URL) throws -> AVAudioFile {
+    static func open(_ url: URL) throws -> AudioPCMSource {
         try validateExtension(url)
         guard MusicFiles.isRegularFile(url), FileManager.default.isReadableFile(atPath: url.path) else {
             throw Failure.unreadableFile
         }
-        let file = try AVAudioFile(forReading: url)
+        let file = try AudioPCMSources.open(url)
         let format = file.processingFormat
         guard file.length > 0 else { throw Failure.emptyAudio }
         guard format.sampleRate.isFinite, format.sampleRate > 0, format.channelCount > 0,
@@ -33,6 +33,9 @@ enum AudioDecoding {
     }
 
     static func message(_ error: Error, strings: Strings) -> String {
+        if let failure = error as? OggFailure {
+            return failure == .unsupportedStream ? strings.audioUnsupportedCodec : strings.audioInvalid
+        }
         switch error as? Failure {
         case .unsupportedFile: return strings.errorNoSupportedFiles
         case .unreadableFile: return strings.audioUnreadable

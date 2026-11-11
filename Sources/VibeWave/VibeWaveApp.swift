@@ -62,6 +62,7 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     func applicationWillTerminate(_ notification: Notification) {
         model.savePlaybackSession()
         model.stop(preservingSession: true)
+        PersistenceQueue.shared.flush()
         shortcuts.stop()
         mediaControls.stop()
         updater?.installOnTerminate()

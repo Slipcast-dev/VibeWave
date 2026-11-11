@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os
 import VibeWaveCore
 
 /// Состояние фоновой задачи импорта для интерфейса. Хранит вид операции, а не текст:
@@ -30,31 +31,26 @@ struct ImportProgress: Equatable {
 
 /// Фоновая задача импорта или сканирования. Отмена и частота отчётов
 /// защищены блокировкой: к задаче обращаются потоки сканирования и главный поток.
-final class ImportJob: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cancelled = false
-    private var lastReport = Date.distantPast
-
-    var isCancelled: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return cancelled
+final class ImportJob: Sendable {
+    private struct State {
+        var cancelled = false
+        var lastReport = Date.distantPast
     }
 
-    func cancel() {
-        lock.lock()
-        cancelled = true
-        lock.unlock()
-    }
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var isCancelled: Bool { state.withLock { $0.cancelled } }
+
+    func cancel() { state.withLock { $0.cancelled = true } }
 
     /// Не чаще 10 раз в секунду, чтобы не перегружать SwiftUI; последний отчёт проходит всегда.
     func shouldReport(final: Bool) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        let now = Date()
-        guard final || now.timeIntervalSince(lastReport) >= 0.1 else { return false }
-        lastReport = now
-        return true
+        state.withLock { state in
+            let now = Date()
+            guard final || now.timeIntervalSince(state.lastReport) >= 0.1 else { return false }
+            state.lastReport = now
+            return true
+        }
     }
 }
 
@@ -120,7 +116,7 @@ enum MediaScanner {
         return FolderScan(files: files, added: try readTracks(fresh, strings: strings, job: job, progress: progress))
     }
 
-    /// Проверка файла тем же декодером (AVAudioFile), что и при воспроизведении.
+    /// Проверка файла тем же декодером (AudioPCMSource), что и при воспроизведении.
     private static func probe(_ url: URL) -> Result<Track, Error> {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -138,14 +134,13 @@ enum MediaScanner {
         } catch { return .failure(error) }
     }
 
-    private final class Counter: @unchecked Sendable {
-        private let lock = NSLock()
-        private var value = 0
+    private final class Counter: Sendable {
+        private let value = OSAllocatedUnfairLock(initialState: 0)
         func increment() -> Int {
-            lock.lock()
-            defer { lock.unlock() }
-            value += 1
-            return value
+            value.withLock { value in
+                value += 1
+                return value
+            }
         }
     }
 }

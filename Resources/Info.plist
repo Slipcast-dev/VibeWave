@@ -17,12 +17,18 @@
 <key>UTTypeDescription</key><string>VibeWave Playlist Track</string>
 <key>UTTypeConformsTo</key><array><string>public.data</string></array>
 </dict></array>
+<key>UTImportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>org.xiph.ogg-audio</string>
+<key>UTTypeDescription</key><string>Ogg Audio</string>
+<key>UTTypeConformsTo</key><array><string>public.audio</string></array>
+<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>ogg</string><string>oga</string><string>opus</string></array><key>public.mime-type</key><array><string>audio/ogg</string><string>audio/opus</string></array></dict>
+</dict></array>
 <key>CFBundleDocumentTypes</key><array><dict>
 <key>CFBundleTypeName</key><string>Local Audio</string>
 <key>CFBundleTypeRole</key><string>Viewer</string>
 <key>LSHandlerRank</key><string>Alternate</string>
-<key>LSItemContentTypes</key><array><string>public.mp3</string><string>org.xiph.flac</string><string>com.microsoft.waveform-audio</string><string>com.sony.wave64</string><string>public.aiff-audio</string><string>public.aifc-audio</string><string>public.aac-audio</string><string>com.apple.m4a-audio</string><string>com.apple.protected-mpeg-4-audio-b</string><string>com.apple.mpeg-4-ringtone</string><string>com.apple.coreaudio-format</string><string>public.au-audio</string></array>
-<key>CFBundleTypeExtensions</key><array><string>mp3</string><string>flac</string><string>wav</string><string>wave</string><string>w64</string><string>aif</string><string>aiff</string><string>aifc</string><string>aac</string><string>adts</string><string>m4a</string><string>m4b</string><string>m4r</string><string>caf</string><string>au</string><string>snd</string></array>
+<key>LSItemContentTypes</key><array><string>public.mp3</string><string>org.xiph.flac</string><string>com.microsoft.waveform-audio</string><string>com.sony.wave64</string><string>public.aiff-audio</string><string>public.aifc-audio</string><string>public.aac-audio</string><string>com.apple.m4a-audio</string><string>com.apple.protected-mpeg-4-audio-b</string><string>com.apple.mpeg-4-ringtone</string><string>com.apple.coreaudio-format</string><string>public.au-audio</string><string>org.xiph.ogg-audio</string></array>
+<key>CFBundleTypeExtensions</key><array><string>mp3</string><string>flac</string><string>wav</string><string>wave</string><string>w64</string><string>aif</string><string>aiff</string><string>aifc</string><string>aac</string><string>adts</string><string>m4a</string><string>m4b</string><string>m4r</string><string>caf</string><string>au</string><string>snd</string><string>ogg</string><string>oga</string><string>opus</string></array>
 </dict><dict>
 <key>CFBundleTypeName</key><string>Local Audio Playlist</string>
 <key>CFBundleTypeRole</key><string>Viewer</string>

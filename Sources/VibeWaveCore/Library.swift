@@ -113,7 +113,7 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
 
 /// Атомарная запись защищает библиотеку от частично сохранённого JSON.
 /// Старый формат (массив плейлистов) читается без изменений файла.
-public struct LibraryStore {
+public struct LibraryStore: Sendable {
     public let url: URL
     public init(url: URL) { self.url = url }
 

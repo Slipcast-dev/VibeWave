@@ -1,10 +1,12 @@
 import AVFoundation
 import Foundation
+import os
 import VibeWaveCore
 
 /// Воспроизведение текущего трека через AVAudioEngine:
-/// файл или PCM-очередь → AVAudioPlayerNode → ReplayGain → EQ → баланс и громкость → выход.
+/// файл (`scheduleSegment`) или PCM-очередь → AVAudioPlayerNode → ReplayGain → EQ → баланс и громкость → выход.
 /// Отвечает также за security-scoped доступ к файлу, перемотку и уровни каналов.
+/// Источники без `AVAudioFile` (Ogg) всегда подаются очередью коротких буферов.
 /// Очередь и библиотека находятся в PlayerModel.
 @MainActor
 final class AudioEngine {
@@ -32,13 +34,15 @@ final class AudioEngine {
     /// Промежуточный микшер: его pan и volume применяются на входе основного микшера.
     private let balance = AVAudioMixerNode()
     private let meter = LevelMeter()
-    private var file: AVAudioFile?
+    private var source: AudioPCMSource?
+    private var sourceURL: URL?
     private var activeInfo: Info?
     private var activeURL: URL?
     private var activeFormat: AVAudioFormat?
     private var plan: AudioStreamPlan?
     private let decodeQueue = DispatchQueue(label: "VibeWave.audio-transition", qos: .userInitiated)
-    private var stream: AudioTransitionStream?
+    private var stream: AudioChunkProducer?
+    private var transitions: AudioTransitionStream? { stream as? AudioTransitionStream }
     private var decoding = false
     private var streamDone = false
     private var scheduledCount = 0
@@ -53,6 +57,7 @@ final class AudioEngine {
     private var generation = 0
     private(set) var isPlaying = false
     private var configurationObserver: NSObjectProtocol?
+    private var tagGainCache: (url: URL, modified: Date?, values: ReplayGainValues?)?
 
     init() {
         engine.attach(player)
@@ -90,7 +95,7 @@ final class AudioEngine {
         return stoppedTime
     }
 
-    nonisolated static func describe(_ file: AVAudioFile, url: URL) -> Info {
+    nonisolated static func describe(_ file: AudioPCMSource, url: URL) -> Info {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let seconds = Double(file.length) / file.processingFormat.sampleRate
         let bitrate = seconds > 0 ? Int(exactly: (Double(size) * 8 / seconds / 1000).rounded()) ?? 0 : 0
@@ -103,7 +108,7 @@ final class AudioEngine {
         unload()
         do {
             try openNativeFile(url)
-            guard let file = file else { throw AudioDecoding.Failure.invalidAudio }
+            guard let file = source else { throw AudioDecoding.Failure.invalidAudio }
             let info = Self.describe(file, url: url)
             activeInfo = info
             activeURL = url
@@ -121,7 +126,7 @@ final class AudioEngine {
     /// режиме пересчёт ReplayGain меняет только усиление, без перерыва звука.
     func configurePlayback(_ newPlan: AudioStreamPlan) {
         guard isLoaded, plan != newPlan else { return }
-        let wasStreaming = stream != nil
+        let wasStreaming = transitions != nil
         plan = newPlan
         if wasStreaming || newPlan.options.usesTransitions {
             seek(to: currentTime)
@@ -132,7 +137,7 @@ final class AudioEngine {
 
     func replenish(_ newPlan: AudioStreamPlan, after ordinal: Int) {
         plan = newPlan
-        guard let stream = stream else { return }
+        guard let stream = transitions else { return }
         decodeQueue.async { stream.replenish(after: ordinal, with: newPlan.upcoming) }
     }
 
@@ -176,7 +181,7 @@ final class AudioEngine {
                 stream = AudioTransitionStream(plan: plan, url: url, start: frame)
                 startFrame = frame
             } else {
-                if file?.url != url { try openNativeFile(url) }
+                if sourceURL != url { try openNativeFile(url) }
                 schedule(from: frame)
             }
             applyReplayGain()
@@ -189,7 +194,8 @@ final class AudioEngine {
     func unload() {
         resetSchedule()
         engine.stop()
-        file = nil
+        source = nil
+        sourceURL = nil
         activeInfo = nil
         activeURL = nil
         activeFormat = nil
@@ -220,21 +226,34 @@ final class AudioEngine {
     }
 
     private func openNativeFile(_ url: URL) throws {
-        file = nil
+        source = nil
+        sourceURL = nil
         if let accessedURL = accessedURL { accessedURL.stopAccessingSecurityScopedResource() }
         accessedURL = url.startAccessingSecurityScopedResource() ? url : nil
-        file = try AudioDecoding.open(url)
+        source = try AudioDecoding.open(url)
+        sourceURL = url
     }
 
     private func applyReplayGain() {
-        guard stream == nil, let plan = plan, let url = activeURL, plan.options.replayGain != .off else {
+        guard transitions == nil, let plan = plan, let url = activeURL, plan.options.replayGain != .off else {
             normalizer.bypass = true
             return
         }
-        let values = plan.current.cachedGain ?? (try? AudioMetadataFile.read(url, includeArtwork: false).replayGain)
+        let values = plan.current.cachedGain ?? taggedReplayGain(url)
         let gain = plan.options.gain(values ?? ReplayGainValues(), equalizer: plan.equalizer)
         normalizer.globalGain = Float(gain)
         normalizer.bypass = gain == 0
+    }
+
+    /// Теги ReplayGain текущего файла. `configurePlayback` вызывается при каждом изменении
+    /// очереди, поэтому файл перечитывается, только если сменился адрес или дата изменения
+    /// (запись тегов заменяет файл и сбрасывает кэш).
+    private func taggedReplayGain(_ url: URL) -> ReplayGainValues? {
+        let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if let cached = tagGainCache, cached.url == url, cached.modified == modified { return cached.values }
+        let values = try? AudioMetadataFile.read(url, includeArtwork: false).replayGain
+        tagGainCache = (url, modified, values)
+        return values
     }
 
     private func resetSchedule() {
@@ -302,7 +321,13 @@ final class AudioEngine {
     }
 
     private func schedule(from frame: AVAudioFramePosition) {
-        guard let file = file else { return }
+        guard let source = source else { return }
+        guard let file = source as? AVAudioFile else {
+            resetSchedule()
+            startFrame = max(0, min(frame, source.length))
+            stream = AudioSourceFeeder(source: source, start: startFrame)
+            return
+        }
         generation += 1
         let current = generation
         player.stop()
@@ -356,21 +381,12 @@ final class AudioEngine {
 }
 
 /// Уровни каналов из отвода микшера. Буферы приходят из потока звука, чтение — с главного.
-private final class LevelMeter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var current: (Double, Double) = (0, 0)
+private final class LevelMeter: Sendable {
+    private let current = OSAllocatedUnfairLock(initialState: (0.0, 0.0))
 
-    var levels: (Double, Double) {
-        lock.lock()
-        defer { lock.unlock() }
-        return current
-    }
+    var levels: (Double, Double) { current.withLock { $0 } }
 
-    func reset() {
-        lock.lock()
-        current = (0, 0)
-        lock.unlock()
-    }
+    func reset() { current.withLock { $0 = (0, 0) } }
 
     func update(_ buffer: AVAudioPCMBuffer) {
         guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
@@ -385,8 +401,6 @@ private final class LevelMeter: @unchecked Sendable {
             return max(0, min(1, (Double(decibels) + 50) / 50))
         }
         let value = (level(0), level(1))
-        lock.lock()
-        current = value
-        lock.unlock()
+        current.withLock { $0 = value }
     }
 }

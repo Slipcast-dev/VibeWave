@@ -59,6 +59,8 @@ struct RegressionChecks {
         try checkSearchAndSmartPlaylists(in: support, fixtures: fixtures)
         try checkNativeAudioFormats(in: support, fixtures: fixtures.deletingLastPathComponent()
             .appendingPathComponent("FormatFixtures", isDirectory: true))
+        try checkOggPlayback(in: support, formats: fixtures.deletingLastPathComponent()
+            .appendingPathComponent("FormatFixtures", isDirectory: true))
         try checkAudioProcessing(in: support, fixtures: fixtures)
         try checkPlaybackSession(in: support, fixtures: fixtures)
         checkApplicationSettings(in: support)
@@ -575,7 +577,8 @@ struct RegressionChecks {
             ("tone.aac", .adts, kAudioFormatMPEG4AAC, 2), ("aac.m4a", .mpeg4, kAudioFormatMPEG4AAC, 2),
             ("alac.m4a", .mpeg4, kAudioFormatAppleLossless, 2), ("tone.m4b", .mpeg4, kAudioFormatMPEG4AAC, 2),
             ("tone.m4r", .mpeg4, kAudioFormatMPEG4AAC, 2), ("pcm.caf", .caf, kAudioFormatLinearPCM, 2),
-            ("opus.caf", .caf, kAudioFormatOpus, 2), ("tone.au", .au, kAudioFormatULaw, 1)
+            ("opus.caf", .caf, kAudioFormatOpus, 2), ("tone.au", .au, kAudioFormatULaw, 1),
+            ("tone.opus", .ogg, kAudioFormatOpus, 2), ("tone.ogg", .ogg, AudioFormatID(0x766F_7262), 2)
         ]
         let urls = cases.map { fixtures.appendingPathComponent($0.0) }
         for ((name, format, codec, channels), url) in zip(cases, urls) {
@@ -606,7 +609,8 @@ struct RegressionChecks {
         waitFor { model.current == nil || model.error != nil }
         precondition(model.error == nil && !model.playing, model.error ?? "Автопереход и остановка")
 
-        let aliases = [("tone.wav", "copy.WAVE"), ("tone.aiff", "copy.aif"), ("tone.aac", "copy.adts"), ("tone.au", "copy.snd")]
+        let aliases = [("tone.wav", "copy.WAVE"), ("tone.aiff", "copy.aif"), ("tone.aac", "copy.adts"), ("tone.au", "copy.snd"),
+                       ("tone.ogg", "copy.OGA")]
         let aliasFolder = root.appendingPathComponent("Aliases", isDirectory: true)
         try manager.createDirectory(at: aliasFolder, withIntermediateDirectories: true)
         for (original, alias) in aliases {
@@ -650,18 +654,22 @@ struct RegressionChecks {
         try Data("not audio".utf8).write(to: damaged)
         let drm = root.appendingPathComponent("Protected.m4p")
         try manager.copyItem(at: m4a, to: drm)
+        let damagedOgg = root.appendingPathComponent("Damaged.opus")
+        try Data("OggS not really".utf8).write(to: damagedOgg)
         let unknownCodec = root.appendingPathComponent("UnknownCodec.wav")
         var altered = try Data(contentsOf: fixtures.appendingPathComponent("tone.wav"))
         altered[20] = 0xFF
         altered[21] = 0xFF
         try altered.write(to: unknownCodec)
-        model.receiveFiles([damaged, drm, unknownCodec])
+        model.receiveFiles([damaged, drm, unknownCodec, damagedOgg])
         waitFor { !model.importing }
         precondition(model.openTracks.count == tracks.count + 2)
         let report = model.error ?? ""
         precondition(report.contains("Damaged.wav: \(model.strings.audioInvalid)") &&
                      report.contains("UnknownCodec.wav: \(model.strings.audioUnsupportedCodec)") &&
-                     report.contains("Protected.m4p: \(model.strings.audioProtected)"), report)
+                     report.contains("Protected.m4p: \(model.strings.audioProtected)") &&
+                     report.contains("Damaged.opus: \(model.strings.audioInvalid)"), report)
+        precondition(AudioDecoding.message(OggFailure.unsupportedStream, strings: model.strings) == model.strings.audioUnsupportedCodec)
         print("PASS: native formats, real codecs, seek/advance, aliases, folder/drop/Finder/playlist import, read-only M4A tags and errors")
     }
 
@@ -1250,6 +1258,102 @@ struct RegressionChecks {
         failed.checkNow()
         waitFor { failed.status == .failed }
         print("PASS: application preferences, mute and volume, update check settings and error status")
+    }
+
+    /// Ogg идёт через собственный декодер и подачу буферов: бесшовность и сведение
+    /// проверяются на точных отсчётах, плеер — на переходах, перемотке, паузе и ReplayGain.
+    static func checkOggPlayback(in support: URL, formats: URL) throws {
+        let root = support.appendingPathComponent("OggPlayback", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        func track(_ name: String) throws -> Track {
+            let url = formats.appendingPathComponent(name)
+            let source = try AudioDecoding.open(url)
+            return Track(url: url, duration: Double(source.length) / source.processingFormat.sampleRate)
+        }
+        func pcm(_ name: String) throws -> [Float] {
+            let source = try AudioDecoding.open(formats.appendingPathComponent(name))
+            let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: AVAudioFrameCount(source.length))!
+            try source.read(into: buffer)
+            return Array(UnsafeBufferPointer(start: buffer.floatChannelData![0], count: Int(buffer.frameLength)))
+        }
+        func stream(_ names: [String], _ options: AudioPlaybackOptions) throws -> (samples: [Float], boundaries: [AudioStreamBoundary]) {
+            let items = try names.map { AudioStreamItem(track: try track($0), cachedGain: nil) }
+            let plan = AudioStreamPlan(current: items[0], upcoming: Array(items.dropFirst()), options: options,
+                                       equalizer: EqualizerSettings())
+            let producer = AudioTransitionStream(plan: plan, url: items[0].track.url, start: 0)
+            var samples: [Float] = [], boundaries: [AudioStreamBoundary] = []
+            var done = false
+            while !done {
+                let batch = try producer.produce(maximum: 8)
+                done = batch.done
+                for chunk in batch.chunks {
+                    samples += UnsafeBufferPointer(start: chunk.buffer.floatChannelData![0], count: Int(chunk.buffer.frameLength))
+                    if let boundary = chunk.boundary { boundaries.append(boundary) }
+                }
+            }
+            return (samples, boundaries)
+        }
+        let caf = try pcm("opus.caf"), opus = try pcm("tone.opus"), vorbis = try pcm("tone.ogg")
+        precondition(caf == opus, "Ogg Opus и CAF с теми же пакетами совпадают")
+
+        var options = AudioPlaybackOptions()
+        options.gapless = true
+        let gapless = try stream(["opus.caf", "tone.opus", "tone.ogg"], options)
+        precondition(gapless.boundaries.map(\.consumed) == [0, 0] && gapless.samples == caf + opus + vorbis,
+                     "Бесшовная цепочка CAF → Ogg Opus → Ogg Vorbis без пропусков и вставок")
+        // Фикстуры из одного альбома: исключение для альбомов отключено, иначе переход останется бесшовным.
+        options.crossfade = 0.1
+        options.preserveAlbums = false
+        let faded = try stream(["tone.opus", "tone.ogg"], options)
+        precondition(faded.boundaries.map(\.consumed) == [4_800] && faded.samples.count == 18_000 + 18_000 - 4_800,
+                     "Сведение 0,1 с между Ogg Opus и Ogg Vorbis")
+
+        let defaultsKey = "VibeWave.OggChecks." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: defaultsKey)!
+        defer { defaults.removePersistentDomain(forName: defaultsKey) }
+        let model = PlayerModel(supportDirectory: root, playbackDefaults: defaults)
+        model.listeningOptions.enabled = false
+        model.receiveFiles(["sweep.opus", "sweep.oga", "tone.opus", "tone.ogg"].map { formats.appendingPathComponent($0) })
+        waitFor { !model.importing }
+        precondition(model.error == nil && model.openTracks.count == 4, model.error ?? "Импорт Ogg")
+        let tracks = model.openTracks
+        precondition(abs(tracks[0].duration - 6) < 0.001 && abs(tracks[1].duration - 6) < 0.001)
+        precondition(tracks[2].title == "Тест Opus" && tracks[3].title == "Тест Vorbis")
+
+        // Без переходов: подача одного источника и перемотка по всему файлу.
+        model.audioOptions = AudioPlaybackOptions()
+        model.play(tracks[0], in: Array(tracks.prefix(2)))
+        precondition(model.playing && model.error == nil, model.error ?? "Запуск Ogg Opus")
+        for target in [4.5, 1.25, 5.9] {
+            model.seek(target)
+            precondition(abs(model.position - target) < 0.01, "Перемотка Ogg на \(target)")
+        }
+        waitFor { model.current?.id == tracks[1].id || model.error != nil }
+        precondition(model.error == nil && model.playing, model.error ?? "Переход к Ogg Vorbis")
+        model.seek(3)
+        model.toggle()
+        precondition(!model.playing && abs(model.position - 3) < 0.05)
+        model.toggle()
+        model.seek(5.95)
+        waitFor { model.current == nil || model.error != nil }
+        precondition(model.error == nil && !model.playing, model.error ?? "Окончание Ogg Vorbis")
+
+        // Бесшовный режим плеера: границы треков в очереди буферов и перемотка внутри них.
+        options.crossfade = 0
+        model.audioOptions = options
+        model.play(tracks[2], in: [tracks[2], tracks[3], tracks[0]])
+        waitFor { model.current?.id == tracks[3].id || model.error != nil }
+        precondition(model.error == nil && model.playing, model.error ?? "Бесшовный переход Ogg")
+        waitFor { model.current?.id == tracks[0].id || model.error != nil }
+        model.seek(2)
+        precondition(model.error == nil && abs(model.position - 2) < 0.01, model.error ?? "Перемотка в бесшовном режиме")
+        model.stop()
+
+        model.analyzeGain([tracks[1], tracks[2]])
+        waitFor { model.gainJob == nil }
+        precondition(model.gainStore.values(for: tracks[1])?.trackGain != nil &&
+                     model.gainStore.values(for: tracks[2])?.trackPeak != nil, model.gainReport ?? "ReplayGain для Ogg")
+        print("PASS: Ogg Opus/Vorbis exact PCM, gapless and crossfade chains, import, seek, pause, advance, gapless player, ReplayGain analysis")
     }
 
     static func waitFor(_ condition: () -> Bool) {

@@ -2,26 +2,26 @@
 
 ![VibeWave — a minimal audio player for macOS](docs/assets/vibewave-banner-en.svg)
 
-[![Version 2.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)
+[![Version 2.1.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Russian and English](docs/assets/badges/languages.svg)
 ![Swift 5.8+](docs/assets/badges/swift.svg)
-[![Stars](docs/assets/badges/stars.svg)](https://github.com/Slipcast-dev/VibeWave/stargazers)
+[![Stars](docs/assets/badges/stars.svg)](https://github.com/Slipcast-dev/VibeWave)
 [![Downloads](docs/assets/badges/downloads.svg)](https://github.com/Slipcast-dev/VibeWave/releases)
 
 # VibeWave
 
-A lightweight local audio player for **macOS 13+** for MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, and AU. Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the app connects to GitHub to check for and download updates.
+A lightweight local audio player for **macOS 13+** for MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU, and Ogg (Opus, Vorbis). Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the app connects to GitHub to check for and download updates.
 
-[Download v2.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Download v2.1.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Features
 
 - Play, pause, stop, previous/next track, seeking, volume and balance.
 - Shuffle, repeat queue, and repeat track. Change modes in the player, the Playback menu, or Settings (`⌘,`).
 - Import and export M3U, M3U8, and PLS. Drop playlists into the player, or use relative paths to move a playlist with its music.
-- MP3/FLAC tag and artwork editing, read-only MPEG-4 Audio tags, local star ratings, and configurable listening history.
+- MP3/FLAC tag and artwork editing, read-only MPEG-4 Audio and Ogg tags, local star ratings, and configurable listening history.
 - Section and library search, filters, sorting, and saved smart playlists.
 - **Equalizer:** 10 bands (32 Hz – 16 kHz, ±12 dB), preamp and 9 presets; the **EQ** button sits to the right of the playback controls.
 - Compact Windows 95–style player: time display, scrolling title, kbps/kHz and level meter, with the playlist below.
@@ -49,11 +49,11 @@ Screenshots are rendered with test data, not a real music library.
 
 ![Release info: Apple Silicon and Intel, ad hoc signature](docs/assets/release-banner-en.svg)
 
-**[Release v2.0.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.0.0)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
+**[Release v2.1.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
 
-- `VibeWave-2.0.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
-- `VibeWave-2.0.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
-- `VibeWave-2.0.0-macos-universal.zip` — the app in a ZIP archive.
+- `VibeWave-2.1.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
+- `VibeWave-2.1.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
+- `VibeWave-2.1.0-macos-universal.zip` — the app in a ZIP archive.
 - `SHA256SUMS.txt` — checksums. Verify in the download folder: `shasum -a 256 -c SHA256SUMS.txt`.
 
 The app has a local **ad hoc** signature and is not notarized by Apple. On first launch macOS shows a warning: allow it in System Settings → Privacy & Security. Do not turn off macOS protection entirely.

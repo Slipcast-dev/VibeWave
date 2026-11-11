@@ -22,9 +22,55 @@ struct AudioStreamBoundary: Sendable {
     let ordinal: Int
 }
 
+/// Поставщик коротких PCM-буферов для `AudioEngine`. `produce` вызывается
+/// только на последовательной очереди декодирования.
+protocol AudioChunkProducer: AnyObject, Sendable {
+    func produce(maximum: Int) throws -> (chunks: [AudioTransitionStream.Chunk], done: Bool)
+}
+
+/// Подача одного источника без переходов: для форматов, которые нельзя передать
+/// в `scheduleSegment` (Ogg). Громкость ReplayGain при этом задаёт узел нормализации.
+/// Позиция выставляется на очереди декодирования, где источник и читается.
+final class AudioSourceFeeder: AudioChunkProducer, @unchecked Sendable {
+    private let source: AudioPCMSource
+    private let start: AVAudioFramePosition
+    private var positioned = false
+
+    init(source: AudioPCMSource, start: AVAudioFramePosition) {
+        self.source = source
+        self.start = start
+    }
+
+    func produce(maximum: Int) throws -> (chunks: [AudioTransitionStream.Chunk], done: Bool) {
+        if !positioned {
+            source.framePosition = start
+            positioned = true
+        }
+        var chunks: [AudioTransitionStream.Chunk] = []
+        while chunks.count < maximum {
+            let remaining = source.length - source.framePosition
+            guard remaining > 0 else { return (chunks, true) }
+            let frames = AVAudioFrameCount(min(4096, remaining))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: source.processingFormat, frameCapacity: frames) else {
+                throw AudioDecoding.Failure.invalidAudio
+            }
+            try source.read(into: buffer, frameCount: frames)
+            guard buffer.frameLength > 0 else { return (chunks, true) }
+            chunks.append(AudioTransitionStream.Chunk(buffer: buffer, boundary: nil))
+        }
+        return (chunks, source.framePosition >= source.length)
+    }
+}
+
 /// Декодирование выполняется на выделенной последовательной очереди.
 /// В граф передаются короткие Float32-буферы одного формата.
-final class AudioTransitionStream: @unchecked Sendable {
+///
+/// `@unchecked Sendable` оправдан инвариантом, который компилятор проверить не может:
+/// источник PCM (`AVAudioFile` или декодер Ogg) не потокобезопасен, поэтому `produce` и `replenish` вызываются
+/// только на последовательной `AudioEngine.decodeQueue`, а главный поток лишь хранит ссылку.
+final class AudioTransitionStream: AudioChunkProducer, @unchecked Sendable {
+    /// Буфер после `produce` больше не изменяется декодером: он передаётся
+    /// на главный поток и далее только в `AVAudioPlayerNode.scheduleBuffer`.
     struct Chunk: @unchecked Sendable {
         let buffer: AVAudioPCMBuffer
         let boundary: AudioStreamBoundary?
@@ -33,7 +79,7 @@ final class AudioTransitionStream: @unchecked Sendable {
     private final class Source {
         let item: AudioStreamItem
         let url: URL
-        let file: AVAudioFile
+        let file: AudioPCMSource
         let access: Bool
         let info: AudioEngine.Info
         let factor: Float

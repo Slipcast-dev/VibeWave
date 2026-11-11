@@ -1,3 +1,4 @@
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 import VibeWaveCore
@@ -87,21 +88,12 @@ enum DropReceiver {
 }
 
 /// Доступ к результатам параллельных callbacks защищён блокировкой.
-private final class DroppedFileBatch: @unchecked Sendable {
+private final class DroppedFileBatch: Sendable {
     let group = DispatchGroup()
-    private let lock = NSLock()
-    private var results: [URL?]
-    init(count: Int) { results = Array(repeating: nil, count: count) }
-    func set(_ url: URL?, at index: Int) {
-        lock.lock()
-        defer { lock.unlock() }
-        results[index] = url
-    }
-    var urls: [URL] {
-        lock.lock()
-        defer { lock.unlock() }
-        return results.compactMap { $0 }
-    }
+    private let results: OSAllocatedUnfairLock<[URL?]>
+    init(count: Int) { results = OSAllocatedUnfairLock(initialState: Array(repeating: nil, count: count)) }
+    func set(_ url: URL?, at index: Int) { results.withLock { $0[index] = url } }
+    var urls: [URL] { results.withLock { $0.compactMap { $0 } } }
 }
 
 func trackProvider(_ track: Track, playlistID: UUID?) -> NSItemProvider {

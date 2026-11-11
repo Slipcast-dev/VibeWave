@@ -2,6 +2,8 @@
 # Воспроизводимая сборка: исходники и версия отделены от генерируемого .app.
 # По умолчанию собирается универсальное приложение (Apple Silicon + Intel).
 # Только текущая архитектура для быстрой отладки: VIBEWAVE_ARCHS="$(uname -m)" zsh scripts/build-app.sh
+# Сборка без автообновления (локальные и экспериментальные копии не заменятся публичным релизом):
+# VIBEWAVE_UPDATES=off zsh scripts/build-app.sh
 set -euo pipefail
 cd "${0:A:h}/.."
 version="$(<VERSION)"
@@ -63,6 +65,16 @@ done
 cp Resources/Info.plist "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$app_dir/Contents/Info.plist"
+case "${VIBEWAVE_UPDATES:-on}" in
+    on) ;;
+    off)
+        # Без адреса ленты и ключа Updater не создаётся, сеть не используется.
+        /usr/libexec/PlistBuddy -c "Delete :VWUpdateFeedURL" "$app_dir/Contents/Info.plist"
+        /usr/libexec/PlistBuddy -c "Delete :VWUpdatePublicKey" "$app_dir/Contents/Info.plist"
+        print 'Автообновление отключено в этой сборке.'
+        ;;
+    *) print -u2 "VIBEWAVE_UPDATES: ожидается on или off"; exit 1 ;;
+esac
 
 iconset="$staging/AppIcon.iconset"
 mkdir -p "$iconset"

@@ -214,6 +214,8 @@ final class PlayerModel: NSObject, ObservableObject {
         engine.onFailure = { [weak self] error in self?.playbackLost(error) }
         engine.onTransition = { [weak self] boundary, position in self?.trackTransitioned(boundary, position: position) }
         engine.onRecovered = { [weak self] position in self?.resumeListening(at: position) }
+        // Отложенная запись другого экземпляра модели должна попасть на диск до чтения.
+        PersistenceQueue.shared.flush()
         do {
             // При первом запуске нового имени читаем прежнюю библиотеку без её удаления.
             if !FileManager.default.fileExists(atPath: store.url.path) {
@@ -241,26 +243,39 @@ final class PlayerModel: NSObject, ObservableObject {
         }
     }
 
+    /// Состояние в памяти меняется сразу, файл записывается в фоне.
     func saveListeningActivity(_ activity: ListeningActivity) {
         guard activity != listeningActivity else { return }
         guard listeningStoreReadable else {
             error = strings.listeningReadOnly
             return
         }
-        do {
-            try listeningStore.save(activity)
-            listeningActivity = activity
-        } catch {
-            self.error = "\(strings.listeningHistory)\n\(error.localizedDescription)"
-        }
+        listeningActivity = activity
+        let store = listeningStore
+        PersistenceQueue.shared.write(store.url, onError: { [weak self] error in
+            let message = error.localizedDescription
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.error = "\(self.strings.listeningHistory)\n\(message)"
+            }
+        }) { try store.save(activity) }
     }
 
+    /// Снимок собирается на главном потоке, кодирование и запись выполняются в фоне.
     func save() {
         guard canSave else { return }
         // Временные треки вне плейлистов не сохраняются, поэтому их нет и в порядке.
         let persistent = Set(playlists.flatMap(\.tracks).map(\.id) + folders.flatMap(\.tracks).map(\.id))
-        do { try store.save(LibrarySnapshot(playlists: playlists, folders: folders, order: libraryOrder.filter(persistent.contains), smartPlaylists: smartPlaylists)) }
-        catch { self.error = strings.errorLibrarySave(error.localizedDescription) }
+        let snapshot = LibrarySnapshot(playlists: playlists, folders: folders, order: libraryOrder.filter(persistent.contains),
+                                       smartPlaylists: smartPlaylists)
+        let store = store
+        PersistenceQueue.shared.write(store.url, onError: { [weak self] error in
+            let message = error.localizedDescription
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.error = self.strings.errorLibrarySave(message)
+            }
+        }) { try store.save(snapshot) }
     }
 
     private static func loadEqualizer() -> EqualizerSettings {

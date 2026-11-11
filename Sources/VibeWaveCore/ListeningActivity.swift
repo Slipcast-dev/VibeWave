@@ -91,7 +91,7 @@ public struct ListeningSession {
 }
 
 /// Раздельный файл сохраняет совместимость с библиотекой и её старыми версиями.
-public struct ListeningActivityStore {
+public struct ListeningActivityStore: Sendable {
     public let url: URL
 
     public init(url: URL) { self.url = url }
