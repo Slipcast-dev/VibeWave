@@ -265,14 +265,14 @@ struct WindowSizer: NSViewRepresentable {
     func updateNSView(_ view: NSView, context: Context) {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            window.contentMinSize = NSSize(width: wide ? 600 : 440, height: 460)
+            window.contentMinSize = NSSize(width: wide ? 660 : 480, height: 460)
             var frame = window.frame
             // Первое появление: слишком широкое окно (после прежней раскладки) сужаем.
             let firstOversized = context.coordinator.last == nil && frame.width > (wide ? 760 : 560)
             let toggled = context.coordinator.last.map { $0 != wide } ?? false
             context.coordinator.last = wide
             guard firstOversized || toggled else { return }
-            frame.size.width = wide ? 620 : 440
+            frame.size.width = wide ? 680 : 480
             frame.size.height = max(frame.height, 640)
             if let visible = window.screen?.visibleFrame {
                 frame.size.height = min(frame.height, visible.height)

@@ -2,7 +2,7 @@
 
 ![VibeWave — a minimal audio player for macOS](docs/assets/vibewave-banner-en.svg)
 
-[![Version 2.1.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)
+[![Version 2.1.1](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Russian and English](docs/assets/badges/languages.svg)
@@ -14,7 +14,7 @@
 
 A lightweight local audio player for **macOS 13+** for MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU, and Ogg (Opus, Vorbis). Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the app connects to GitHub to check for and download updates.
 
-[Download v2.1.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Download v2.1.1](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Features
 
@@ -49,11 +49,11 @@ Screenshots are rendered with test data, not a real music library.
 
 ![Release info: Apple Silicon and Intel, ad hoc signature](docs/assets/release-banner-en.svg)
 
-**[Release v2.1.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
+**[Release v2.1.1 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
 
-- `VibeWave-2.1.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
-- `VibeWave-2.1.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
-- `VibeWave-2.1.0-macos-universal.zip` — the app in a ZIP archive.
+- `VibeWave-2.1.1-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
+- `VibeWave-2.1.1-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
+- `VibeWave-2.1.1-macos-universal.zip` — the app in a ZIP archive.
 - `SHA256SUMS.txt` — checksums. Verify in the download folder: `shasum -a 256 -c SHA256SUMS.txt`.
 
 The app has a local **ad hoc** signature and is not notarized by Apple. On first launch macOS shows a warning: allow it in System Settings → Privacy & Security. Do not turn off macOS protection entirely.
@@ -100,7 +100,8 @@ The DMG, PKG, ZIP, `SHA256SUMS.txt` and a signed `update.json` appear in `.relea
 7. **EQ** at the right end of the ⏮ ▶ ❚❚ ■ ⏭ row opens the equalizer. Use “Presets → Manage Presets” to save your bands and preamp or transfer a preset as JSON.
 8. **Settings → Audio** controls ReplayGain, gapless playback and crossfade. You can analyze the current view and separately confirm writing ReplayGain tags to MP3/FLAC files.
 9. **RU ▾ / EN ▾** next to “View” chooses the language: “System”, “Русский” or “English”. By default VibeWave uses the macOS language: Russian if it comes before English in the language list, otherwise English.
-10. The **Repeat** button cycles through off, queue, and track. The **Shuffle** button works independently.
+10. The **⚙** button next to the language menu opens Settings (same as `⌘,`).
+11. The **Repeat** button cycles through off, queue, and track. The **Shuffle** button works independently.
 
 **Keyboard shortcuts:** Space — play/pause; `⌘O` — add files; `⌘W` — close the window; `⌘M` — minimize; `⌘Q` — quit. Use **Settings → Shortcuts** to enable and assign global shortcuts or control system media keys. **General** offers paused queue restoration and an option to quit when closing the player window.
 

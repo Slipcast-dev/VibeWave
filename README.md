@@ -2,7 +2,7 @@
 
 ![VibeWave — минималистичный аудиоплеер для macOS](docs/assets/vibewave-banner.svg)
 
-[![Версия 2.1.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)
+[![Версия 2.1.1](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Русский и английский](docs/assets/badges/languages.svg)
@@ -14,7 +14,7 @@
 
 Лёгкий локальный аудиоплеер для **macOS 13+** с поддержкой MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU и Ogg (Opus, Vorbis). Интерфейс в стиле Windows 95, 10-полосный эквалайзер, русский и английский языки, автообновление. Без аккаунтов и сторонних зависимостей; единственный сетевой запрос — проверка обновлений на GitHub при запуске или вручную.
 
-[Скачать v2.1.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0) · [Полная документация](DOCUMENTATION.md) · [Промт разработки](DEVELOPMENT_PROMPT.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Скачать v2.1.1](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1) · [Полная документация](DOCUMENTATION.md) · [Промт разработки](DEVELOPMENT_PROMPT.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Возможности
 
@@ -49,11 +49,11 @@
 
 ![Информация о релизе: Apple Silicon и Intel, ad hoc подпись](docs/assets/release-banner.svg)
 
-**[Релиз v2.1.0 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.0)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
+**[Релиз v2.1.1 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
 
-- `VibeWave-2.1.0-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
-- `VibeWave-2.1.0-macos-universal.pkg` — мастер установки в `/Applications`.
-- `VibeWave-2.1.0-macos-universal.zip` — архив приложения.
+- `VibeWave-2.1.1-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
+- `VibeWave-2.1.1-macos-universal.pkg` — мастер установки в `/Applications`.
+- `VibeWave-2.1.1-macos-universal.zip` — архив приложения.
 - `SHA256SUMS.txt` — контрольные суммы. Проверка в папке загрузки: `shasum -a 256 -c SHA256SUMS.txt`.
 
 Подпись локальная **ad hoc**, нотариализация Apple не выполнена. При первом запуске macOS покажет предупреждение: разрешите открытие в «Системных настройках» → «Конфиденциальность и безопасность». Не отключайте защиту macOS целиком.
@@ -100,7 +100,8 @@ DMG, PKG, ZIP, `SHA256SUMS.txt` и подписанный `update.json` появ
 7. **EQ** у правого края ряда ⏮ ▶ ❚❚ ■ ⏭ открывает эквалайзер. В меню «Пресеты → Управление пресетами» можно сохранить свои полосы и предусиление, перенести пресет в JSON или загрузить его из файла.
 8. **Настройки → Звук** включает ReplayGain, воспроизведение без пауз и плавное сведение. Там же можно проанализировать текущий раздел и отдельно подтвердить запись ReplayGain в файлы MP3/FLAC.
 9. **RU ▾ / EN ▾** справа от «Вид» выбирает язык: «Как в системе», «Русский» или «English». По умолчанию — язык macOS: русский, если он стоит в списке языков раньше английского, иначе английский.
-10. Кнопка **«Повтор»** последовательно выбирает выключенный режим, повтор очереди и повтор трека. Кнопка **«Перемешивание»** включается независимо.
+10. Кнопка **⚙** справа от языка открывает «Настройки» (то же, что `⌘,`).
+11. Кнопка **«Повтор»** последовательно выбирает выключенный режим, повтор очереди и повтор трека. Кнопка **«Перемешивание»** включается независимо.
 
 **Сочетания клавиш:** пробел — воспроизведение/пауза; `⌘O` — добавить файлы; `⌘W` — закрыть окно; `⌘M` — свернуть; `⌘Q` — завершить приложение. В **Настройки → Горячие клавиши** можно включить и назначить глобальные сочетания, а также управлять системными медиаклавишами. В **Общие** можно включить восстановление трека и позиции на паузе и выбрать, завершать ли приложение при закрытии окна.
 
