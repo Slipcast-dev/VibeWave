@@ -80,6 +80,8 @@ struct SettingsView: View {
                 .padding(.top, 10)
             Divider()
             ShortcutSettingsView(shortcuts: shortcuts) { preferences.mediaKeys = true }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 10)
         }
     }
 

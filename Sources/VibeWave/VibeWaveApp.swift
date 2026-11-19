@@ -148,7 +148,7 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
         NSApp.windowsMenu = windowMenu
     }
 
-    @objc private func showSettings() {
+    @objc func showSettings() {
         if settingsWindow == nil {
             let view = SettingsView(model: model, preferences: preferences, shortcuts: shortcuts, updater: updater)
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))

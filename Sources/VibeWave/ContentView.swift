@@ -149,6 +149,13 @@ struct ContentView: View {
                     .help(s.libraryHelp)
                 viewMenu
                 languageMenu
+                Button {
+                    // Тот же обработчик, что и у пункта меню «Настройки…» (⌘,).
+                    NSApp.sendAction(Selector(("showSettings")), to: nil, from: nil)
+                } label: {
+                    Image(systemName: "gearshape").font(.system(size: 12, weight: .semibold))
+                }
+                .help(s.menuSettings).accessibilityLabel(s.menuSettings)
                 Spacer(minLength: 4)
                 if let progress = model.importProgress {
                     // Во время импорта вместо счётчика — ход работы и отмена.
