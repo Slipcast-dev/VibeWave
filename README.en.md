@@ -2,7 +2,7 @@
 
 ![VibeWave — a minimal audio player for macOS](docs/assets/vibewave-banner-en.svg)
 
-[![Version 2.1.1](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)
+[![Version 3.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Russian and English](docs/assets/badges/languages.svg)
@@ -14,7 +14,7 @@
 
 A lightweight local audio player for **macOS 13+** for MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU, and Ogg (Opus, Vorbis). Windows 95–style interface, 10-band equalizer, Russian and English, auto-update. No accounts and no third-party dependencies; the app connects to GitHub to check for and download updates.
 
-[Download v2.1.1](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Download v3.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0) · [Full documentation (Russian)](DOCUMENTATION.md) · [Changelog (Russian)](CHANGELOG.md) · [Development handoff (Russian)](HANDOFF.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Features
 
@@ -49,22 +49,22 @@ Screenshots are rendered with test data, not a real music library.
 
 ![Release info: Apple Silicon and Intel, ad hoc signature](docs/assets/release-banner-en.svg)
 
-**[Release v2.1.1 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
+**[Release v3.0.0 and downloads](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0)** are on GitHub. One build runs on **Apple Silicon (M1 and later)** and **Intel** Macs with macOS 13+.
 
-- `VibeWave-2.1.1-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
-- `VibeWave-2.1.1-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
-- `VibeWave-2.1.1-macos-universal.zip` — the app in a ZIP archive.
+- `VibeWave-3.0.0-macos-universal.dmg` — disk image: open it and drag VibeWave to Applications.
+- `VibeWave-3.0.0-macos-universal.pkg` — installer that puts VibeWave in `/Applications`.
+- `VibeWave-3.0.0-macos-universal.zip` — the app in a ZIP archive.
 - `SHA256SUMS.txt` — checksums. Verify in the download folder: `shasum -a 256 -c SHA256SUMS.txt`.
 
 The app has a local **ad hoc** signature and is not notarized by Apple. On first launch macOS shows a warning: allow it in System Settings → Privacy & Security. Do not turn off macOS protection entirely.
 
-Versions before 2.0 cannot update themselves: install 2.0 manually once, and from then on VibeWave keeps itself up to date.
+Versions before 2.0 cannot update themselves: install 2.0 manually once, and from then on VibeWave keeps itself up to date. Versions 2.x offer 3.0.0 on their own at launch.
 
 ## Auto-update
 
 - In **Settings → Updates**, turn launch checks on or off or select **Check Now**.
 - If a compatible update is available, VibeWave offers **Update** or **Later**.
-- After “Update” the archive downloads in the background and is verified: SHA-256, the developer’s Ed25519 signature, bundle identifier, version and code signature. A forged update is never installed.
+- After “Update” the archive downloads in the background and is verified: the developer’s Ed25519 signature on both the update description and the archive, SHA-256, bundle identifier, version and code signature; the app is checked once more right before it is replaced. A forged update is never installed.
 - If nothing is playing, VibeWave replaces itself and restarts right away. If music is playing, it waits until playback stops; if you quit first, the new version is installed on quit.
 - Updating works when VibeWave lives in Applications or another folder on disk; it is off when the app runs straight from the disk image. If you cannot write to the app’s folder, macOS asks for an administrator password.
 

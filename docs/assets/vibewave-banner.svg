@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="title desc">
-  <title id="title">VibeWave 2.1 — локальная музыка, ретро-интерфейс</title>
+  <title id="title">VibeWave 3.0 — локальная музыка, ретро-интерфейс</title>
   <desc id="desc">MP3, FLAC, Ogg и другие форматы, macOS 13+, Apple Silicon и Intel, 10-полосный эквалайзер, русский и английский интерфейс, автообновление.</desc>
   <rect width="1280" height="460" fill="#008080"/>
   <rect x="22" y="22" width="1238" height="420" fill="#202020"/>
@@ -8,7 +8,7 @@
   <path d="M1254 16V436H16" fill="none" stroke="#404040" stroke-width="4"/>
   <rect x="28" y="28" width="1214" height="42" fill="#000080"/>
   <g fill="#fff" font-family="Arial, sans-serif" font-size="21" font-weight="700">
-    <text x="44" y="56">♪  VibeWave</text><text x="1218" y="56" text-anchor="end" font-size="17">v2.1 · macOS 13+</text>
+    <text x="44" y="56">♪  VibeWave</text><text x="1218" y="56" text-anchor="end" font-size="17">v3.0 · macOS 13+</text>
   </g>
   <rect x="54" y="110" width="166" height="166" rx="22" fill="#121019" stroke="#808080" stroke-width="2"/>
   <path d="M77 163 C92 125 109 235 128 199 C144 163 149 136 164 171 C178 205 181 226 198 163" fill="none" stroke="#b078f3" stroke-width="19" stroke-linecap="round"/>

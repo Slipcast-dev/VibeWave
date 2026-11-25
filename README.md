@@ -2,7 +2,7 @@
 
 ![VibeWave — минималистичный аудиоплеер для macOS](docs/assets/vibewave-banner.svg)
 
-[![Версия 2.1.1](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)
+[![Версия 3.0.0](docs/assets/badges/version.svg)](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0)
 ![macOS 13+](docs/assets/badges/macos.svg)
 ![Apple Silicon + Intel](docs/assets/badges/architecture.svg)
 ![Русский и английский](docs/assets/badges/languages.svg)
@@ -14,7 +14,7 @@
 
 Лёгкий локальный аудиоплеер для **macOS 13+** с поддержкой MP3, FLAC, WAV, Wave64, AIFF, AAC, MPEG-4 Audio, CAF, AU и Ogg (Opus, Vorbis). Интерфейс в стиле Windows 95, 10-полосный эквалайзер, русский и английский языки, автообновление. Без аккаунтов и сторонних зависимостей; единственный сетевой запрос — проверка обновлений на GitHub при запуске или вручную.
 
-[Скачать v2.1.1](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1) · [Полная документация](DOCUMENTATION.md) · [Промт разработки](DEVELOPMENT_PROMPT.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
+[Скачать v3.0.0](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0) · [Полная документация](DOCUMENTATION.md) · [Хэнд-офф и ТЗ](HANDOFF.md) · [Изменения](CHANGELOG.md) · [CI](https://github.com/Slipcast-dev/VibeWave/actions)
 
 ## Возможности
 
@@ -49,22 +49,22 @@
 
 ![Информация о релизе: Apple Silicon и Intel, ad hoc подпись](docs/assets/release-banner.svg)
 
-**[Релиз v2.1.1 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v2.1.1)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
+**[Релиз v3.0.0 и файлы загрузки](https://github.com/Slipcast-dev/VibeWave/releases/tag/v3.0.0)** на GitHub. Одна сборка работает на **Apple Silicon (M1 и новее)** и на **Intel**, macOS 13+.
 
-- `VibeWave-2.1.1-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
-- `VibeWave-2.1.1-macos-universal.pkg` — мастер установки в `/Applications`.
-- `VibeWave-2.1.1-macos-universal.zip` — архив приложения.
+- `VibeWave-3.0.0-macos-universal.dmg` — образ диска: откройте и перетащите VibeWave в «Программы».
+- `VibeWave-3.0.0-macos-universal.pkg` — мастер установки в `/Applications`.
+- `VibeWave-3.0.0-macos-universal.zip` — архив приложения.
 - `SHA256SUMS.txt` — контрольные суммы. Проверка в папке загрузки: `shasum -a 256 -c SHA256SUMS.txt`.
 
 Подпись локальная **ad hoc**, нотариализация Apple не выполнена. При первом запуске macOS покажет предупреждение: разрешите открытие в «Системных настройках» → «Конфиденциальность и безопасность». Не отключайте защиту macOS целиком.
 
-Версии до 2.0 автообновления не умеют: 2.0 нужно один раз поставить вручную, дальше VibeWave обновляется сам.
+Версии до 2.0 автообновления не умеют: 2.0 нужно один раз поставить вручную, дальше VibeWave обновляется сам. Версии 2.x предложат 3.0.0 сами при запуске.
 
 ## Автообновление
 
 - В разделе **Настройки → Обновления** можно выключить проверку при запуске или нажать **Проверить сейчас**.
 - При обнаружении совместимой версии VibeWave предлагает **Обновить** или **Позже**.
-- После «Обновить» архив скачивается в фоне и проверяется: SHA-256, подпись разработчика Ed25519, идентификатор, версия и подпись кода. Подделанное обновление не устанавливается.
+- После «Обновить» архив скачивается в фоне и проверяется: подпись разработчика Ed25519 у описания обновления и у архива, SHA-256, идентификатор, версия и подпись кода; перед заменой приложение проверяется ещё раз. Подделанное обновление не устанавливается.
 - Если ничего не играет, VibeWave заменяет себя и сразу перезапускается. Если играет музыка, ждёт остановки; если закрыть программу раньше, новая версия встанет при выходе.
 - Обновление работает, когда VibeWave лежит в «Программах» или другой папке на диске; при запуске прямо из образа диска оно отключено. Если у пользователя нет прав на запись в папку приложения, macOS попросит пароль администратора.
 
