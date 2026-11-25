@@ -41,18 +41,24 @@ public struct UpdateManifest: Codable, Equatable, Sendable {
     public var minimumSystemVersion: String
     /// Короткое описание изменений по кодам языков («ru», «en»).
     public var notes: [String: String]
+    /// Подпись Ed25519 всех полей описания (`signedContent`) в Base64. Без неё нельзя было бы
+    /// доверять тексту заметок и системным требованиям: подпись архива их не покрывает.
+    public var manifestSignature: String?
 
     public init(version: String, url: URL, sha256: String, signature: String,
-                minimumSystemVersion: String = "13.0", notes: [String: String] = [:]) {
+                minimumSystemVersion: String = "13.0", notes: [String: String] = [:], manifestSignature: String? = nil) {
         self.version = version
         self.url = url
         self.sha256 = sha256
         self.signature = signature
         self.minimumSystemVersion = minimumSystemVersion
         self.notes = notes
+        self.manifestSignature = manifestSignature
     }
 
-    private enum CodingKeys: String, CodingKey { case version, url, sha256, signature, minimumSystemVersion, notes }
+    private enum CodingKeys: String, CodingKey {
+        case version, url, sha256, signature, minimumSystemVersion, notes, manifestSignature
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -62,6 +68,25 @@ public struct UpdateManifest: Codable, Equatable, Sendable {
         signature = try container.decode(String.self, forKey: .signature)
         minimumSystemVersion = try container.decodeIfPresent(String.self, forKey: .minimumSystemVersion) ?? "13.0"
         notes = try container.decodeIfPresent([String: String].self, forKey: .notes) ?? [:]
+        manifestSignature = try container.decodeIfPresent(String.self, forKey: .manifestSignature)
+    }
+
+    /// Однозначная запись полей для подписи: каждое значение с длиной в байтах UTF-8,
+    /// заметки по возрастанию кода языка. Не зависит от форматирования JSON.
+    public var signedContent: Data {
+        var result = Data("VibeWave update manifest v1\n".utf8)
+        func field(_ value: String) {
+            result.append(contentsOf: "\(value.utf8.count):".utf8)
+            result.append(contentsOf: value.utf8)
+            result.append(0x0A)
+        }
+        for value in [version, url.absoluteString, sha256.lowercased(), signature, minimumSystemVersion] { field(value) }
+        field(String(notes.count))
+        for key in notes.keys.sorted() {
+            field(key)
+            field(notes[key] ?? "")
+        }
+        return result
     }
 
     /// Обновление предлагается, только если версия новее текущей, система подходит,
@@ -91,11 +116,34 @@ public enum UpdateSignature {
 
     /// Проверяет контрольную сумму и подпись архива. Ключ — 32 байта открытого ключа в Base64.
     public static func verify(_ archive: Data, manifest: UpdateManifest, publicKey: String) throws {
+        try verify(archive, manifest: manifest, publicKeys: [publicKey])
+    }
+
+    /// Подпись принимается, если её подтверждает любой из ключей: так приложение
+    /// переходит на новый ключ, продолжая принимать обновления, подписанные прежним.
+    public static func verify(_ archive: Data, manifest: UpdateManifest, publicKeys: [String]) throws {
         guard sha256Hex(archive) == manifest.sha256.lowercased() else { throw Failure.checksumMismatch }
-        guard let keyData = Data(base64Encoded: publicKey),
-              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData) else { throw Failure.badPublicKey }
-        guard let signature = Data(base64Encoded: manifest.signature) else { throw Failure.badSignature }
-        guard key.isValidSignature(signature, for: archive) else { throw Failure.signatureMismatch }
+        try check(Data(base64Encoded: manifest.signature), for: archive, publicKeys: publicKeys)
+    }
+
+    /// Проверяет подпись самого описания обновления. Описание без подписи отклоняется.
+    public static func verifyManifest(_ manifest: UpdateManifest, publicKeys: [String]) throws {
+        guard let signature = manifest.manifestSignature else { throw Failure.badSignature }
+        try check(Data(base64Encoded: signature), for: manifest.signedContent, publicKeys: publicKeys)
+    }
+
+    /// Подписывает описание целиком; вызывается после заполнения всех остальных полей.
+    public static func signManifest(_ manifest: UpdateManifest, privateKey: String) throws -> UpdateManifest {
+        var signed = manifest
+        signed.manifestSignature = try sign(manifest.signedContent, privateKey: privateKey)
+        return signed
+    }
+
+    private static func check(_ signature: Data?, for message: Data, publicKeys: [String]) throws {
+        let keys = publicKeys.compactMap { Data(base64Encoded: $0).flatMap { try? Curve25519.Signing.PublicKey(rawRepresentation: $0) } }
+        guard !keys.isEmpty, keys.count == publicKeys.count else { throw Failure.badPublicKey }
+        guard let signature = signature else { throw Failure.badSignature }
+        guard keys.contains(where: { $0.isValidSignature(signature, for: message) }) else { throw Failure.signatureMismatch }
     }
 
     /// Подпись архива закрытым ключом (32 байта в Base64). Используется скриптом выпуска и проверками.

@@ -5,7 +5,8 @@
 #   VibeWave-<версия>-macos-<arch>.zip  — архив приложения;
 #   SHA256SUMS.txt                      — контрольные суммы;
 #   update.json                         — описание обновления для автообновления (версия, адрес ZIP,
-#                                         SHA-256 и подпись Ed25519 ключом ~/.config/vibewave/update-signing-key).
+#                                         SHA-256, подписи Ed25519 архива и самого описания; ключ —
+#                                         в Связке ключей или файле, см. scripts/tools/UpdateSigner.swift).
 # Без ключа подписи update.json не создаётся (например, в CI); VIBEWAVE_REQUIRE_UPDATE_SIGNATURE=1 делает это ошибкой.
 # Заметки к обновлению: VIBEWAVE_UPDATE_NOTES_RU и VIBEWAVE_UPDATE_NOTES_EN (необязательно).
 # <arch> — universal для Apple Silicon + Intel, иначе имя единственной архитектуры.
@@ -95,27 +96,28 @@ ditto -c -k --sequesterRsrc --keepParent "$app_dir" "$output_dir/$base.zip"
 
 # update.json: подписанное описание обновления. Открытый ключ в собранном приложении должен
 # соответствовать закрытому ключу, иначе установленные копии отвергнут обновление.
-key_file="${VIBEWAVE_UPDATE_KEY:-$HOME/.config/vibewave/update-signing-key}"
-if [[ -f "$key_file" ]]; then
-    tools="$PWD/.build/tools"
-    target="$(uname -m)-apple-macosx13.0"
-    mkdir -p "$tools"
-    swiftc -parse-as-library -emit-module -module-name VibeWaveCore Sources/VibeWaveCore/*.swift \
-        -emit-module-path "$tools/VibeWaveCore.swiftmodule" -module-cache-path "$tools/Modules" -target "$target"
-    swiftc -parse-as-library -c -wmo -module-name VibeWaveCore Sources/VibeWaveCore/*.swift \
-        -o "$tools/VibeWaveCore.o" -module-cache-path "$tools/Modules" -target "$target"
-    swiftc -O -parse-as-library -I "$tools" -module-cache-path "$tools/Modules" -target "$target" \
-        scripts/tools/UpdateSigner.swift "$tools/VibeWaveCore.o" -o "$tools/update-signer"
+# Ключ ищется в $VIBEWAVE_UPDATE_KEY (файл), затем в Связке ключей, затем в
+# ~/.config/vibewave/update-signing-key (подробности — scripts/tools/UpdateSigner.swift).
+tools="$PWD/.build/tools"
+tool_target="$(uname -m)-apple-macosx13.0"
+mkdir -p "$tools"
+swiftc -parse-as-library -emit-module -module-name VibeWaveCore Sources/VibeWaveCore/*.swift \
+    -emit-module-path "$tools/VibeWaveCore.swiftmodule" -module-cache-path "$tools/Modules" -target "$tool_target"
+swiftc -parse-as-library -c -wmo -module-name VibeWaveCore Sources/VibeWaveCore/*.swift \
+    -o "$tools/VibeWaveCore.o" -module-cache-path "$tools/Modules" -target "$tool_target"
+swiftc -O -parse-as-library -I "$tools" -module-cache-path "$tools/Modules" -target "$tool_target" \
+    scripts/tools/UpdateSigner.swift "$tools/VibeWaveCore.o" -o "$tools/update-signer"
+if "$tools/update-signer" has-key; then
     app_key="$(/usr/libexec/PlistBuddy -c 'Print :VWUpdatePublicKey' "$app_dir/Contents/Info.plist")"
-    [[ "$(VIBEWAVE_UPDATE_KEY="$key_file" "$tools/update-signer" public)" == "$app_key" ]] ||
+    [[ "$("$tools/update-signer" public)" == "$app_key" ]] ||
         { print -u2 'Ключ подписи не соответствует VWUpdatePublicKey в приложении'; exit 1; }
     repo="${VIBEWAVE_REPO:-Slipcast-dev/VibeWave}"
-    VIBEWAVE_UPDATE_KEY="$key_file" "$tools/update-signer" manifest "$output_dir/$base.zip" "$version" \
+    "$tools/update-signer" manifest "$output_dir/$base.zip" "$version" \
         "https://github.com/$repo/releases/download/v$version/$base.zip" \
         "${VIBEWAVE_UPDATE_NOTES_RU:-}" "${VIBEWAVE_UPDATE_NOTES_EN:-}" > "$output_dir/update.json"
-    print -r -- "update.json подписан ключом $key_file"
+    print -r -- 'update.json подписан (архив и описание целиком)'
 elif [[ "${VIBEWAVE_REQUIRE_UPDATE_SIGNATURE:-0}" == 1 ]]; then
-    print -u2 "Нет ключа подписи обновлений: $key_file"
+    print -u2 'Нет ключа подписи обновлений'
     exit 1
 else
     print -u2 'Ключа подписи нет: update.json не создан (автообновление этот выпуск не увидит).'

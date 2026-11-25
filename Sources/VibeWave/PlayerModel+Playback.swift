@@ -223,6 +223,9 @@ extension PlayerModel {
         if shuffleEnabled && repeatMode != .track {
             _ = shuffleOrder.advance(from: previous.id, repeatingQueue: false)
         }
+        // Следующий трек открыл поток переходов; устаревшую закладку обновляем здесь,
+        // как при обычном запуске трека.
+        _ = try? resolvedURL(of: boundary.item.track)
         setNowPlaying(boundary.item.track, info: boundary.info)
         self.position = position
         if playing { resumeListening(at: position) }

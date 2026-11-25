@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os
 import VibeWaveCore
 
 /// Строка общего списка: трек и источник, к которому относятся действия с ним.
@@ -36,10 +37,10 @@ enum PlaybackSource: Equatable, Codable {
 /// - `PlayerModel+Playback.swift` — очередь воспроизведения и управление `AudioEngine`.
 @MainActor
 final class PlayerModel: NSObject, ObservableObject {
-    @Published var playlists: [Playlist] = [] { didSet { scheduleQueries() } }
-    @Published var folders: [MusicFolder] = [] { didSet { scheduleQueries() } }
+    @Published var playlists: [Playlist] = [] { didSet { libraryChanged() } }
+    @Published var folders: [MusicFolder] = [] { didSet { libraryChanged() } }
     /// Ручной порядок раздела «Вся музыка» без группировки.
-    @Published var libraryOrder: [UUID] = [] { didSet { scheduleQueries() } }
+    @Published var libraryOrder: [UUID] = [] { didSet { libraryChanged() } }
     /// Группировка общего списка по плейлистам и папкам; влияет и на очередь.
     @Published var groupByPlaylists = UserDefaults.standard.bool(forKey: "library.grouped") {
         didSet {
@@ -50,7 +51,7 @@ final class PlayerModel: NSObject, ObservableObject {
     }
     /// nil — раздел «Вся музыка»; иначе ID плейлиста или папки.
     @Published var selectedID: UUID? { didSet { scheduleQueries() } }
-    @Published var openTracks: [Track] = [] { didSet { scheduleQueries() } }
+    @Published var openTracks: [Track] = [] { didSet { libraryChanged() } }
     @Published var smartPlaylists: [SmartPlaylist] = [] { didSet { scheduleQueries() } }
     @Published var searchText = "" { didSet { scheduleQueries() } }
     @Published var searchScope: SearchScope { didSet { scheduleQueries() } }
@@ -128,7 +129,13 @@ final class PlayerModel: NSObject, ObservableObject {
     var gainJob: ImportJob?
     let gainStore: ReplayGainStore
     let userEqualizerPresets: EqualizerPresetLibrary
-    @Published var position: Double = 0
+    /// Позиция меняется четыре раза в секунду. Она хранится в отдельном объекте,
+    /// чтобы тики не перерисовывали список треков и другие представления модели.
+    let clock = PlaybackClock()
+    var position: Double {
+        get { clock.position }
+        set { clock.position = newValue }
+    }
     @Published var duration: Double = 0
     @Published var volume: Double = 0.75 {
         didSet { engine.volume = muted ? 0 : Float(volume) }
@@ -173,6 +180,7 @@ final class PlayerModel: NSObject, ObservableObject {
     var playbackSource: PlaybackSource = .container(nil)
     var librarySectionStart: String?
     private let store: LibraryStore
+    private var cachedLibraryEntries: [LibraryEntry]?
     // После ошибки чтения не перезаписываем повреждённую библиотеку молча.
     private var canSave = true
 
@@ -223,13 +231,12 @@ final class PlayerModel: NSObject, ObservableObject {
                 playlists = try legacy.load()
                 if !playlists.isEmpty { try store.save(playlists) }
             } else {
-                let snapshot = try store.loadSnapshot()
-                playlists = snapshot.playlists
-                folders = snapshot.folders
-                libraryOrder = snapshot.order
-                smartPlaylists = snapshot.smartPlaylists
+                apply(try store.loadSnapshot())
+                backUpLibrary()
             }
             selectedID = nil
+        } catch where LibraryStore.isDamaged(error) {
+            recoverDamagedLibrary()
         } catch {
             canSave = false
             self.error = strings.errorLibraryRead(error.localizedDescription)
@@ -240,6 +247,36 @@ final class PlayerModel: NSObject, ObservableObject {
         } catch {
             listeningStoreReadable = false
             self.error = "\(strings.listeningHistory)\n\(error.localizedDescription)"
+        }
+    }
+
+    private func apply(_ snapshot: LibrarySnapshot) {
+        playlists = snapshot.playlists
+        folders = snapshot.folders
+        libraryOrder = snapshot.order
+        smartPlaylists = snapshot.smartPlaylists
+    }
+
+    /// Резервная копия последней прочитанной без ошибок библиотеки.
+    private func backUpLibrary() {
+        let store = store
+        PersistenceQueue.shared.write(store.backupURL, onError: { error in
+            libraryLogger.error("Could not back up library: \(error.localizedDescription)")
+        }) { try store.backUp() }
+    }
+
+    /// Повреждённый JSON переносится рядом с новым именем (не удаляется), библиотека
+    /// берётся из резервной копии или начинается пустой. Запись снова разрешена.
+    private func recoverDamagedLibrary() {
+        do {
+            let recovery = try store.recoverFromDamage()
+            if let snapshot = recovery.snapshot { apply(snapshot) }
+            selectedID = nil
+            error = strings.errorLibraryRecovered(recovery.damagedCopy.lastPathComponent, recovery.snapshot != nil)
+            libraryLogger.error("Damaged library moved to \(recovery.damagedCopy.lastPathComponent, privacy: .public)")
+        } catch {
+            canSave = false
+            self.error = strings.errorLibraryRead(error.localizedDescription)
         }
     }
 
@@ -303,8 +340,22 @@ final class PlayerModel: NSObject, ObservableObject {
     func isFolder(_ id: UUID?) -> Bool { id.map { id in folders.contains { $0.id == id } } ?? false }
     func isPlaylist(_ id: UUID?) -> Bool { id.map { id in playlists.contains { $0.id == id } } ?? false }
 
+    /// Производный список кэшируется до следующего изменения источников:
+    /// представления читают его при каждой перерисовке.
+    private func libraryChanged() {
+        cachedLibraryEntries = nil
+        scheduleQueries()
+    }
+
     /// Все уникальные файлы библиотеки в ручном порядке.
     var libraryEntries: [LibraryEntry] {
+        if let cached = cachedLibraryEntries { return cached }
+        let entries = buildLibraryEntries()
+        cachedLibraryEntries = entries
+        return entries
+    }
+
+    private func buildLibraryEntries() -> [LibraryEntry] {
         var seenIDs = Set<UUID>()
         var seenURLs = Set<URL>()
         var entries: [LibraryEntry] = []
@@ -355,3 +406,5 @@ final class PlayerModel: NSObject, ObservableObject {
         } else { openTracks = tracks }
     }
 }
+
+private let libraryLogger = Logger(subsystem: "local.vibewave.player", category: "library")

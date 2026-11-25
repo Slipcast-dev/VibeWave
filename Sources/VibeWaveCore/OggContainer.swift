@@ -81,10 +81,15 @@ final class OggFileReader {
         let headerSize = OggPage.headerSize + segments
         let body = try bytes(at: offset + UInt64(headerSize), count: bodySize)
         guard body.count == bodySize else { return nil }
-        var checked = header + lacingData + body
-        let stored = checked.littleEndianInteger(at: 22, bytes: 4)
-        checked.replaceSubrange(checked.startIndex + 22..<checked.startIndex + 26, with: [0, 0, 0, 0])
-        guard UInt32(stored) == OggCRC.checksum(checked) else { throw OggFailure.damaged }
+        // Поле CRC (байты 22–25 заголовка) при подсчёте считается нулевым; части страницы
+        // проверяются по очереди, без склейки в новый буфер.
+        let stored = header.littleEndianInteger(at: 22, bytes: 4)
+        var crc = OggCRC.update(0, header.prefix(22))
+        crc = OggCRC.update(crc, OggPage.zeroCRC)
+        crc = OggCRC.update(crc, header.dropFirst(26))
+        crc = OggCRC.update(crc, lacingData)
+        crc = OggCRC.update(crc, body)
+        guard UInt32(stored) == crc else { throw OggFailure.damaged }
         return OggPage(offset: offset, size: headerSize + bodySize, flags: header[header.startIndex + 5],
                        granule: Int64(bitPattern: UInt64(header.littleEndianInteger(at: 6, bytes: 8))),
                        serial: UInt32(header.littleEndianInteger(at: 14, bytes: 4)), lacing: lacing, body: body)
@@ -277,12 +282,18 @@ struct OggStreamInfo {
                              outputGain: gain, headers: headers, dataOffset: dataOffset, lastGranule: last)
     }
 
+    /// Сколько байтов с конца файла просматривается в поиске последней гранулы.
+    /// У исправного файла она находится в первых 64 КБ; ограничение не даёт повреждённому
+    /// или дописанному мусором файлу заставить плеер читать его целиком при открытии.
+    static let lastGranuleSearchLimit: UInt64 = 32 * 1024 * 1024
+
     /// Последняя гранула потока: ищем страницы с конца файла окнами нарастающего размера.
     private static func lastGranule(_ reader: OggFileReader, serial: UInt32, after start: UInt64) throws -> Int64 {
         var span: UInt64 = 64 * 1024
         var end = reader.size
-        while end > start {
-            let from = end > start + span ? end - span : start
+        let floor = reader.size > start + lastGranuleSearchLimit ? reader.size - lastGranuleSearchLimit : start
+        while end > floor {
+            let from = end > floor + span ? end - span : floor
             var position = from
             var found: Int64?
             while let page = try reader.nextValidPage(from: position, limit: end) {
@@ -304,15 +315,24 @@ enum OggCRC {
         return value
     }
 
-    static func checksum(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0
-        for byte in data { crc = (crc << 8) ^ table[Int(((crc >> 24) ^ UInt32(byte)) & 0xFF)] }
+    static func checksum(_ data: Data) -> UInt32 { update(0, data) }
+
+    /// Продолжает подсчёт CRC. Таблица и байты читаются без проверок границ на каждом шаге:
+    /// контрольная сумма считается для каждой страницы при воспроизведении и поиске.
+    static func update(_ start: UInt32, _ data: Data) -> UInt32 {
+        var crc = start
+        table.withUnsafeBufferPointer { table in
+            data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                for byte in bytes { crc = (crc << 8) ^ table[Int(((crc >> 24) ^ UInt32(byte)) & 0xFF)] }
+            }
+        }
         return crc
     }
 }
 
 extension OggPage {
     static let capture = Data("OggS".utf8)
+    static let zeroCRC = Data(count: 4)
 }
 
 extension Data {

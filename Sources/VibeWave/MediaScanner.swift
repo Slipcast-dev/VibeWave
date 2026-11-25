@@ -69,6 +69,8 @@ enum MediaScanner {
         var files: [URL]
         /// Треки только для новых файлов.
         var added: Batch
+        /// Закладка папки устарела (папку переименовали или перенесли): новый адрес и закладка.
+        var relocated: (url: URL, bookmark: Data)? = nil
     }
 
     /// Открывает файлы параллельно; порядок результата совпадает с порядком urls.
@@ -103,17 +105,23 @@ enum MediaScanner {
     static func scanFolder(_ folder: URL, bookmark: Data?, known: Set<URL> = [], strings: Strings, job: ImportJob,
                            progress: Progress) throws -> FolderScan? {
         var root = folder
-        if let data = bookmark {
-            var stale = false
-            if let resolved = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil,
-                                       bookmarkDataIsStale: &stale) { root = resolved }
+        var stale = false
+        if let data = bookmark,
+           let resolved = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil,
+                                   bookmarkDataIsStale: &stale) {
+            root = resolved
         }
         let scoped = root.startAccessingSecurityScopedResource()
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         progress(0, nil)
         guard let files = try MusicFiles.collect(in: root, isCancelled: { job.isCancelled }) else { return nil }
         let fresh = files.filter { !known.contains($0.standardizedFileURL) }
-        return FolderScan(files: files, added: try readTracks(fresh, strings: strings, job: job, progress: progress))
+        var scan = FolderScan(files: files, added: try readTracks(fresh, strings: strings, job: job, progress: progress))
+        if stale, let renewed = try? root.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil,
+                                                       relativeTo: nil) {
+            scan.relocated = (root, renewed)
+        }
+        return scan
     }
 
     /// Проверка файла тем же декодером (AudioPCMSource), что и при воспроизведении.

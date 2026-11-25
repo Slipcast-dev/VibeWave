@@ -113,16 +113,31 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
 
 /// Атомарная запись защищает библиотеку от частично сохранённого JSON.
 /// Старый формат (массив плейлистов) читается без изменений файла.
+/// После каждого успешного чтения рядом хранится резервная копия `library.json.bak`:
+/// если основной файл окажется повреждён, библиотеку можно восстановить из неё.
 public struct LibraryStore: Sendable {
     public let url: URL
     public init(url: URL) { self.url = url }
 
+    public var backupURL: URL { url.appendingPathExtension("bak") }
+
+    /// Итог восстановления повреждённой библиотеки.
+    public struct Recovery: Sendable {
+        /// Куда перенесён повреждённый файл (он не удаляется).
+        public let damagedCopy: URL
+        /// Библиотека из резервной копии; nil — копии нет или она тоже повреждена.
+        public let snapshot: LibrarySnapshot?
+    }
+
     public func loadSnapshot() throws -> LibrarySnapshot {
         guard FileManager.default.fileExists(atPath: url.path) else { return LibrarySnapshot() }
-        let data = try Data(contentsOf: url)
-        if let legacy = try? JSONDecoder().decode([Playlist].self, from: data) {
-            return LibrarySnapshot(playlists: legacy)
-        }
+        return try Self.decode(Data(contentsOf: url))
+    }
+
+    /// Первый значимый символ отличает старый формат (массив) от снимка: JSON разбирается один раз.
+    static func decode(_ data: Data) throws -> LibrarySnapshot {
+        let first = data.first { !(" \t\r\n".utf8.contains($0)) }
+        if first == UInt8(ascii: "[") { return LibrarySnapshot(playlists: try JSONDecoder().decode([Playlist].self, from: data)) }
         return try JSONDecoder().decode(LibrarySnapshot.self, from: data)
     }
 
@@ -135,6 +150,29 @@ public struct LibraryStore: Sendable {
 
     public func save(_ playlists: [Playlist]) throws {
         try save(LibrarySnapshot(playlists: playlists))
+    }
+
+    /// Копирует прочитанный без ошибок файл в резервную копию (атомарно).
+    public func backUp() throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try Data(contentsOf: url).write(to: backupURL, options: .atomic)
+    }
+
+    /// true — файл прочитан, но его содержимое не разбирается (повреждённый JSON).
+    /// Ошибки доступа к диску сюда не относятся: такой файл нельзя трогать.
+    public static func isDamaged(_ error: Error) -> Bool { error is DecodingError }
+
+    /// Переносит повреждённый файл в сторону и пытается прочитать резервную копию.
+    /// Основной файл восстанавливается из копии, чтобы следующий запуск прошёл штатно.
+    public func recoverFromDamage(now: Date = Date()) throws -> Recovery {
+        let stamp = ISO8601DateFormatter().string(from: now).replacingOccurrences(of: ":", with: "-")
+        let damaged = url.deletingPathExtension().appendingPathExtension("damaged-\(stamp).json")
+        try FileManager.default.moveItem(at: url, to: damaged)
+        guard let data = try? Data(contentsOf: backupURL), let snapshot = try? Self.decode(data) else {
+            return Recovery(damagedCopy: damaged, snapshot: nil)
+        }
+        try data.write(to: url, options: .atomic)
+        return Recovery(damagedCopy: damaged, snapshot: snapshot)
     }
 }
 

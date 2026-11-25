@@ -29,6 +29,7 @@ final class VibeWaveAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemVali
     private var mediaObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DiagnosticsRecorder.shared.start()
         installIcon()
         installMenu()
         // objectWillChange приходит до изменения: меню строится на следующем проходе цикла.

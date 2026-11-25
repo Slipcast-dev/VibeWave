@@ -39,8 +39,7 @@ struct ClassicPlayerPanel: View {
                     }
                 }
             }
-            RetroSlider(value: Binding(get: { model.position }, set: { model.seek($0) }),
-                        range: 0...max(1, model.duration), theme: theme)
+            PositionSlider(model: model, clock: model.clock, duration: model.duration, theme: theme)
                 .disabled(model.current == nil).accessibilityLabel(s.position)
             controls
         }
@@ -66,7 +65,8 @@ struct ClassicPlayerPanel: View {
                         .lineLimit(1).fixedSize()
                 }.frame(width: 16)
                 Button { showRemaining.toggle() } label: {
-                    Text(timeText)
+                    TimeReadout(clock: model.clock, loaded: model.current != nil, duration: model.duration,
+                                showRemaining: showRemaining)
                         .font(.custom("Arial", size: 28).weight(.bold)).monospacedDigit()
                         .foregroundColor(model.current == nil ? theme.shadow : theme.foreground)
                         .lineLimit(1).fixedSize()
@@ -83,13 +83,6 @@ struct ClassicPlayerPanel: View {
     private var statusIcon: String {
         if model.current == nil { return "stop.fill" }
         return model.playing ? "play.fill" : "pause.fill"
-    }
-
-    private var timeText: String {
-        guard model.current != nil else { return "00:00" }
-        let seconds = showRemaining ? max(0, model.duration - model.position) : model.position
-        let value = Int(seconds.isFinite ? seconds : 0)
-        return String(format: "%@%02d:%02d", showRemaining ? "-" : "", value / 60, value % 60)
     }
 
     private var marqueeText: String {
@@ -192,6 +185,33 @@ struct ClassicPlayerPanel: View {
 // MARK: - Элементы панели
 
 /// Бегущая строка: прокручивается, только если текст не помещается.
+/// Полоса позиции следит только за часами воспроизведения.
+private struct PositionSlider: View {
+    let model: PlayerModel
+    @ObservedObject var clock: PlaybackClock
+    let duration: Double
+    let theme: PlayerTheme
+    var body: some View {
+        RetroSlider(value: Binding(get: { clock.position }, set: { model.seek($0) }),
+                    range: 0...max(1, duration), theme: theme)
+    }
+}
+
+private struct TimeReadout: View {
+    @ObservedObject var clock: PlaybackClock
+    let loaded: Bool
+    let duration: Double
+    let showRemaining: Bool
+    var body: some View { Text(text) }
+
+    private var text: String {
+        guard loaded else { return "00:00" }
+        let seconds = showRemaining ? max(0, duration - clock.position) : clock.position
+        let value = Int(seconds.isFinite ? min(seconds, 1e9) : 0)
+        return String(format: "%@%02d:%02d", showRemaining ? "-" : "", value / 60, value % 60)
+    }
+}
+
 private struct Marquee: View {
     let text: String
     private static let font = NSFont(name: "Arial", size: 12) ?? .systemFont(ofSize: 12)

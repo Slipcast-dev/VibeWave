@@ -84,8 +84,12 @@ for size in 16 32 128 256 512; do
     sips -z "$doubled" "$doubled" Assets/AppIcon.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/VibeWaveIcon.icns"
-codesign --force --sign - "$app_dir"
+# Hardened Runtime работает и с подписью ad hoc: система запрещает подгрузку чужих библиотек
+# через DYLD_* и внедрение кода в процесс. Developer ID и нотариализация по-прежнему не выполняются.
+codesign --force --options runtime --sign - "$app_dir"
 codesign --verify --strict "$app_dir"
+codesign --display --verbose=1 "$app_dir" 2>&1 | grep -qE 'flags=0x[0-9a-f]+\([^)]*runtime' ||
+    { print -u2 'Hardened Runtime не включён'; exit 1; }
 
 # Удаляется только заменённая сгенерированная сборка, а не исходники или музыка.
 if [[ -e dist/VibeWave.app ]]; then mv dist/VibeWave.app "$staging/previous.app"; fi

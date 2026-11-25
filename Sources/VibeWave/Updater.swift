@@ -16,7 +16,9 @@ final class Updater: ObservableObject {
 
     struct Configuration {
         var feedURL: URL
-        var publicKey: String
+        /// Открытые ключи подписи: основной `VWUpdatePublicKey` и дополнительные `VWUpdatePublicKeys`
+        /// (для перехода на новый ключ).
+        var publicKeys: [String]
         var bundleURL: URL
         var bundleIdentifier: String
         var currentVersion: String
@@ -34,7 +36,8 @@ final class Updater: ObservableObject {
                   !bundle.bundleURL.path.contains("/AppTranslocation/"),
                   (try? bundle.bundleURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]).volumeIsReadOnly) != true
             else { return nil }
-            return Configuration(feedURL: feed, publicKey: key, bundleURL: bundle.bundleURL,
+            let extra = (bundle.object(forInfoDictionaryKey: "VWUpdatePublicKeys") as? [String] ?? []).filter { !$0.isEmpty }
+            return Configuration(feedURL: feed, publicKeys: [key] + extra.filter { $0 != key }, bundleURL: bundle.bundleURL,
                                  bundleIdentifier: identifier, currentVersion: version)
         }
     }
@@ -43,8 +46,8 @@ final class Updater: ObservableObject {
     private let configuration: Configuration
     private let session: URLSession
     private let workDirectory: URL
-    /// Проверенное новое приложение, ожидающее установки.
-    private var prepared: URL?
+    /// Проверенное новое приложение, ожидающее установки, и SHA-256 его исполняемого файла.
+    private var prepared: (app: URL, digest: String)?
     private var installing = false
     private var idleObserver: AnyCancellable?
 
@@ -87,6 +90,8 @@ final class Updater: ObservableObject {
                 status = .noCompatibleUpdate
                 return
             }
+            // Заметки и предложение установки показываются только после проверки подписи описания.
+            try UpdateSignature.verifyManifest(manifest, publicKeys: configuration.publicKeys)
             guard ask(manifest) else { status = .deferred; return }
             status = .downloading
             do {
@@ -123,7 +128,7 @@ final class Updater: ObservableObject {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func download(_ manifest: UpdateManifest) async throws -> URL {
+    private func download(_ manifest: UpdateManifest) async throws -> (app: URL, digest: String) {
         let (temporary, response) = try await session.download(from: manifest.url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 { throw UpdateInstaller.Failure.download }
         let work = workDirectory
@@ -131,12 +136,13 @@ final class Updater: ObservableObject {
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         let archive = work.appendingPathComponent("VibeWave-\(manifest.version).zip")
         try FileManager.default.moveItem(at: temporary, to: archive)
-        let key = configuration.publicKey
+        let keys = configuration.publicKeys
         let identifier = configuration.bundleIdentifier
         // Проверка подписи кода и распаковка — в фоне, чтобы не задерживать музыку и интерфейс.
         return try await Task.detached(priority: .utility) {
-            try UpdateInstaller.prepare(archive: archive, manifest: manifest, publicKey: key,
-                                        bundleIdentifier: identifier, workDirectory: work)
+            let app = try UpdateInstaller.prepare(archive: archive, manifest: manifest, publicKeys: keys,
+                                                  bundleIdentifier: identifier, workDirectory: work)
+            return (app, try UpdateInstaller.executableDigest(app))
         }.value
     }
 
@@ -161,13 +167,13 @@ final class Updater: ObservableObject {
     }
 
     private func install(relaunch: Bool) {
-        guard let app = prepared, !installing else { return }
+        guard let (app, digest) = prepared, !installing else { return }
         installing = true
         idleObserver = nil
         do {
             try UpdateInstaller.launchInstaller(newApp: app, target: configuration.bundleURL,
                                                 waitingFor: ProcessInfo.processInfo.processIdentifier,
-                                                relaunch: relaunch, workDirectory: workDirectory)
+                                                relaunch: relaunch, digest: digest)
         } catch {
             installing = false
             prepared = nil

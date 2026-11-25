@@ -411,7 +411,10 @@ private final class DecoderInput {
             capacity = packet.count
             storage = .allocate(byteCount: capacity, alignment: 16)
         }
-        packet.withUnsafeBytes { storage.copyMemory(from: $0.baseAddress!, byteCount: packet.count) }
+        packet.withUnsafeBytes { bytes in
+            // У пустого пакета нет адреса: копировать нечего.
+            if let base = bytes.baseAddress { storage.copyMemory(from: base, byteCount: bytes.count) }
+        }
         description = AudioStreamPacketDescription(mStartOffset: 0, mVariableFramesInPacket: UInt32(frames),
                                                    mDataByteSize: UInt32(packet.count))
         pending = true

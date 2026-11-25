@@ -266,6 +266,8 @@ public struct Strings: Sendable {
     /// (первые имена, сколько ещё не показано)
     public let errorCouldNotOpen: @Sendable ([String], Int) -> String
     public let errorLibraryRead: @Sendable (String) -> String
+    /// Имя перенесённого повреждённого файла; true — библиотека восстановлена из резервной копии.
+    public let errorLibraryRecovered: @Sendable (String, Bool) -> String
     public let errorLibrarySave: @Sendable (String) -> String
     public let errorResume: String
     public let errorAudioDevice: String
@@ -563,6 +565,11 @@ public struct Strings: Sendable {
             "Не удалось открыть: " + names.joined(separator: ", ") + (more > 0 ? " и ещё \(more)" : "")
         },
         errorLibraryRead: { "Не удалось прочитать библиотеку. Файл сохранён без изменений. \($0)" },
+        errorLibraryRecovered: { name, restored in
+            restored
+                ? "Файл библиотеки повреждён. Плейлисты восстановлены из резервной копии, повреждённый файл сохранён как «\(name)»."
+                : "Файл библиотеки повреждён, резервной копии нет. Начата пустая библиотека, повреждённый файл сохранён как «\(name)»."
+        },
         errorLibrarySave: { "Не удалось сохранить плейлисты: \($0)" },
         errorResume: "Не удалось продолжить воспроизведение.",
         errorAudioDevice: "Аудиоустройство недоступно.",
@@ -851,6 +858,11 @@ public struct Strings: Sendable {
             "Couldn’t open: " + names.joined(separator: ", ") + (more > 0 ? " and \(more) more" : "")
         },
         errorLibraryRead: { "Couldn’t read the library. The file was left unchanged. \($0)" },
+        errorLibraryRecovered: { name, restored in
+            restored
+                ? "The library file was damaged. Playlists were restored from the backup; the damaged file was kept as “\(name)”."
+                : "The library file was damaged and there is no backup. An empty library was started; the damaged file was kept as “\(name)”."
+        },
         errorLibrarySave: { "Couldn’t save playlists: \($0)" },
         errorResume: "Couldn’t resume playback.",
         errorAudioDevice: "The audio device is unavailable.",

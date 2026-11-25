@@ -115,6 +115,10 @@ extension PlayerModel {
                 }
                 guard let index = self.folders.firstIndex(where: { $0.id == id }) else { return }
                 self.folders[index].merge(files: scan.files, added: scan.added.tracks)
+                if let relocated = scan.relocated {
+                    self.folders[index].url = relocated.url
+                    self.folders[index].bookmark = relocated.bookmark
+                }
                 self.invalidateQueryTags(for: scan.files)
                 self.refreshPlaybackQueue()
                 self.save()

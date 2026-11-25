@@ -87,7 +87,7 @@ open dist/VibeWave.app
 zsh scripts/package-release.sh
 ```
 
-DMG, PKG, ZIP, `SHA256SUMS.txt` и подписанный `update.json` появляются в `.release/v<версия>-universal/`. Для `update.json` нужен ключ подписи обновлений `~/.config/vibewave/update-signing-key` (не хранится в репозитории). Для установки без предупреждений Gatekeeper нужны Developer ID и нотариализация Apple. Локальная версия работает без App Sandbox; системная защита macOS не отключается.
+DMG, PKG, ZIP, `SHA256SUMS.txt` и подписанный `update.json` появляются в `.release/v<версия>-universal/`. Для `update.json` нужен ключ подписи обновлений в Связке ключей или в `~/.config/vibewave/update-signing-key` (не хранится в репозитории, см. DOCUMENTATION.md, раздел о ключе подписи). Для установки без предупреждений Gatekeeper нужны Developer ID и нотариализация Apple. Локальная версия работает без App Sandbox; системная защита macOS не отключается.
 
 ## Управление
 

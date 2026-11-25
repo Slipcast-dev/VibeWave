@@ -26,7 +26,7 @@ final class MediaKeyControls {
                 model.seek(seek.positionTime)
             }
         }
-        observation = Publishers.CombineLatest3(model.$current, model.$playing, model.$position)
+        observation = Publishers.CombineLatest3(model.$current, model.$playing, model.clock.$position)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.publish() }
         publish()

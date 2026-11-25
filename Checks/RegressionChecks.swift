@@ -1069,20 +1069,33 @@ struct RegressionChecks {
         let keys = UpdateSignature.generateKeyPair()
         func manifest(for archive: URL, version: String, key: String = keys.privateKey) throws -> UpdateManifest {
             let data = try Data(contentsOf: archive)
-            return UpdateManifest(version: version, url: archive, sha256: UpdateSignature.sha256Hex(data),
-                                  signature: try UpdateSignature.sign(data, privateKey: key))
+            let unsigned = UpdateManifest(version: version, url: archive, sha256: UpdateSignature.sha256Hex(data),
+                                          signature: try UpdateSignature.sign(data, privateKey: key), notes: ["ru": "Заметки"])
+            return try UpdateSignature.signManifest(unsigned, privateKey: key)
         }
         let installed = try makeApp(version: "1.0.0", in: root.appendingPathComponent("Applications", isDirectory: true))
         let good = makeArchive(try makeApp(version: "2.0.0", in: root.appendingPathComponent("build", isDirectory: true)), name: "good.zip")
         let goodManifest = try manifest(for: good, version: "2.0.0")
         precondition(goodManifest.isOffered(currentVersion: "1.0.0", systemVersion: ProcessInfo.processInfo.operatingSystemVersion))
 
-        func rejects(_ archive: URL, _ manifest: UpdateManifest, publicKey: String = keys.publicKey) -> Bool {
+        func rejects(_ archive: URL, _ manifest: UpdateManifest, publicKeys: [String] = [keys.publicKey]) -> Bool {
             let work = root.appendingPathComponent("work-\(UUID().uuidString)")
-            return (try? UpdateInstaller.prepare(archive: archive, manifest: manifest, publicKey: publicKey,
+            return (try? UpdateInstaller.prepare(archive: archive, manifest: manifest, publicKeys: publicKeys,
                                                  bundleIdentifier: "local.vibewave.player", workDirectory: work)) == nil
         }
-        precondition(rejects(good, goodManifest, publicKey: UpdateSignature.generateKeyPair().publicKey), "Чужой ключ отклоняется")
+        precondition(rejects(good, goodManifest, publicKeys: [UpdateSignature.generateKeyPair().publicKey]), "Чужой ключ отклоняется")
+        // Ротация: прежний ключ остаётся в списке, обновление новым ключом принимается.
+        precondition(!rejects(good, goodManifest, publicKeys: [UpdateSignature.generateKeyPair().publicKey, keys.publicKey]),
+                     "Любой из доверенных ключей подтверждает обновление")
+        var unsignedManifest = goodManifest
+        unsignedManifest.manifestSignature = nil
+        precondition(rejects(good, unsignedManifest), "Описание без подписи отклоняется")
+        var forgedNotes = goodManifest
+        forgedNotes.notes = ["ru": "Введите пароль администратора на сайте…"]
+        precondition(rejects(good, forgedNotes), "Подменённые заметки отклоняются")
+        var forgedSystem = goodManifest
+        forgedSystem.minimumSystemVersion = "99.0"
+        precondition(rejects(good, forgedSystem), "Подменённые системные требования отклоняются")
         var tampered = try Data(contentsOf: good)
         tampered[tampered.count / 2] ^= 0xFF
         let tamperedURL = root.appendingPathComponent("tampered.zip")
@@ -1096,15 +1109,34 @@ struct RegressionChecks {
         precondition(rejects(good, wrongVersion), "Версия внутри должна совпадать с обещанной")
 
         let work = root.appendingPathComponent("work", isDirectory: true)
-        let prepared = try UpdateInstaller.prepare(archive: good, manifest: goodManifest, publicKey: keys.publicKey,
+        // Подмена проверенного приложения до установки: установщик сверяет хэш исполняемого файла
+        // непосредственно перед заменой и оставляет прежнюю версию.
+        let swappedWork = root.appendingPathComponent("work-swapped", isDirectory: true)
+        let swapped = try UpdateInstaller.prepare(archive: good, manifest: goodManifest, publicKeys: [keys.publicKey],
+                                                  bundleIdentifier: "local.vibewave.player", workDirectory: swappedWork)
+        let swappedDigest = try UpdateInstaller.executableDigest(swapped)
+        try manager.removeItem(at: swapped.appendingPathComponent("Contents/MacOS/VibeWave"))
+        try manager.copyItem(at: URL(fileURLWithPath: "/usr/bin/false"), to: swapped.appendingPathComponent("Contents/MacOS/VibeWave"))
+        precondition(shell("/usr/bin/codesign", ["--force", "--sign", "-", swapped.path]), "Злоумышленник переподписал копию")
+        let refused = try UpdateInstaller.launchInstaller(newApp: swapped, target: installed, waitingFor: 999_999,
+                                                          relaunch: false, digest: swappedDigest)
+        refused.waitUntilExit()
+        precondition(refused.terminationStatus != 0, "Подменённое после проверки приложение не устанавливается")
+        precondition(NSDictionary(contentsOf: installed.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String == "1.0.0",
+                     "Прежняя версия осталась на месте")
+        precondition(!manager.fileExists(atPath: installed.path + ".vibewave-incoming"), "Отклонённая копия убрана")
+        precondition(UpdateInstaller.installScript.range(of: "install-update.sh") == nil, "Сценарий не пишется во временную папку")
+
+        let prepared = try UpdateInstaller.prepare(archive: good, manifest: goodManifest, publicKeys: [keys.publicKey],
                                                    bundleIdentifier: "local.vibewave.player", workDirectory: work)
+        let preparedDigest = try UpdateInstaller.executableDigest(prepared)
         // Установщик ждёт завершения «приложения» (здесь — короткого процесса) и только потом меняет файлы.
         let running = Process()
         running.executableURL = URL(fileURLWithPath: "/bin/sleep")
         running.arguments = ["0.5"]
         try running.run()
         let installer = try UpdateInstaller.launchInstaller(newApp: prepared, target: installed, waitingFor: running.processIdentifier,
-                                                            relaunch: false, workDirectory: work)
+                                                            relaunch: false, digest: preparedDigest)
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         precondition(installer.isRunning, "Установщик ждёт выхода приложения")
         precondition(NSDictionary(contentsOf: installed.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String == "1.0.0")
@@ -1115,7 +1147,7 @@ struct RegressionChecks {
         precondition(info?["CFBundleShortVersionString"] as? String == "2.0.0", "Приложение заменено новой версией")
         precondition(shell("/usr/bin/codesign", ["--verify", "--strict", installed.path]), "Подпись нового приложения цела")
         precondition(!manager.fileExists(atPath: installed.path + ".vibewave-previous"), "Прежняя версия убрана")
-        print("PASS: auto-update signature checks (foreign key, tampering, other app, version) and background install after exit")
+        print("PASS: auto-update signature checks (foreign key, key rotation, tampering, unsigned/forged manifest, other app, version, swap after verification) and background install after exit")
     }
 
     @discardableResult
@@ -1243,7 +1275,7 @@ struct RegressionChecks {
         let session = URLSession(configuration: sessionConfiguration)
         defer { session.invalidateAndCancel() }
         let url = URL(string: "https://vibewave-test.invalid/update.json")!
-        let configuration = Updater.Configuration(feedURL: url, publicKey: "test", bundleURL: support,
+        let configuration = Updater.Configuration(feedURL: url, publicKeys: ["test"], bundleURL: support,
                                                   bundleIdentifier: "local.vibewave.test", currentVersion: "2.0.0")
         let updater = Updater(model: model, configuration: configuration, session: session)
         updater.checkOnLaunch { restored.automaticUpdates }
